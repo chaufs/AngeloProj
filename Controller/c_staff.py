@@ -136,53 +136,151 @@ class StaffController:
             prev = data.get('paid_prev', 0)
             change = max(0, (prev + paid_now) - total)
 
-            # Added explicit margin to CSS body since we removed the printer margin call
+            # Improved receipt with better readability
             html = f"""
             <html>
             <head>
                 <style>
-                    body {{ font-family: Helvetica, sans-serif; font-size: 12px; margin: 30px; }}
-                    .header {{ text-align: center; border-bottom: 2px dashed black; padding-bottom: 10px; }}
-                    .meta {{ font-size: 11px; margin-top: 10px; }}
-                    table {{ width: 100%; margin-top: 15px; border-collapse: collapse; }}
-                    td {{ padding: 4px; }}
+                    body {{ 
+                        font-family: 'Arial', 'Helvetica', sans-serif; 
+                        font-size: 14px; 
+                        margin: 40px; 
+                        line-height: 1.6;
+                    }}
+                    .header {{ 
+                        text-align: center; 
+                        border-bottom: 3px double black; 
+                        padding-bottom: 15px; 
+                        margin-bottom: 20px;
+                    }}
+                    .header h1 {{
+                        font-size: 24px;
+                        font-weight: bold;
+                        margin: 5px 0;
+                        letter-spacing: 1px;
+                    }}
+                    .header p {{
+                        font-size: 13px;
+                        margin: 3px 0;
+                        color: #333;
+                    }}
+                    .meta {{ 
+                        font-size: 13px; 
+                        margin: 20px 0;
+                        line-height: 1.8;
+                    }}
+                    .meta b {{
+                        font-size: 14px;
+                    }}
+                    table {{ 
+                        width: 100%; 
+                        margin-top: 25px; 
+                        border-collapse: collapse; 
+                        font-size: 14px;
+                    }}
+                    td {{ 
+                        padding: 10px 8px;
+                        border-bottom: 1px solid #ddd;
+                    }}
+                    .desc-col {{ 
+                        width: 65%; 
+                        font-weight: 500;
+                    }}
+                    .amount-col {{ 
+                        width: 35%; 
+                        text-align: right; 
+                        font-weight: 500;
+                    }}
                     .right {{ text-align: right; }}
-                    .line {{ border-bottom: 1px solid #000; }}
-                    .footer {{ text-align: center; font-size: 10px; margin-top: 20px; color: #555; }}
+                    .line {{ 
+                        border-bottom: 2px solid #333; 
+                    }}
+                    .total-row {{
+                        font-size: 16px;
+                        font-weight: bold;
+                        background-color: #f5f5f5;
+                    }}
+                    .footer {{ 
+                        text-align: center; 
+                        font-size: 12px; 
+                        margin-top: 30px; 
+                        padding-top: 20px;
+                        border-top: 2px dashed #999;
+                        color: #666;
+                    }}
                 </style>
             </head>
             <body>
                 <div class="header">
-                    <h2>HOTELLA OFFICIAL RECEIPT</h2>
-                    <p>Hotella Resort & Hotel<br>Davao City, Philippines</p>
+                    <h1>HOTELLA</h1>
+                    <h2 style="margin: 5px 0; font-size: 18px; font-weight: 600;">OFFICIAL RECEIPT</h2>
+                    <p>Hotella Resort & Hotel</p>
+                    <p>Davao City, Philippines</p>
                 </div>
+
                 <div class="meta">
-                    <b>SERIAL NO: {serial_number}</b><br>
-                    Date: {now.strftime('%Y-%m-%d %H:%M:%S')}<br>
-                    Booking Ref: {data.get('bid', 'N/A')}<br>
-                    Guest: {data.get('guest', 'Guest')}<br>
-                    Room: {data.get('room', 'N/A')}<br>
-                    Cashier: {data.get('staff', 'Staff')}
+                    <b>SERIAL NO:</b> {serial_number}<br>
+                    <b>Date:</b> {now.strftime('%Y-%m-%d %H:%M:%S')}<br>
+                    <b>Booking Ref:</b> {data.get('bid', 'N/A')}<br>
+                    <b>Guest Name:</b> {data.get('guest', 'Guest')}<br>
+                    <b>Room Number:</b> {data.get('room', 'N/A')}<br>
+                    <b>Processed By:</b> {data.get('staff', 'Staff')}
                 </div>
+
                 <table>
-                    <tr><td>Description</td> <td class="right">Amount</td></tr>
-                    <tr><td colspan="2" class="line"></td></tr>
-                    <tr><td>Room Charge</td> <td class="right">Php {data.get('room_cost', 0):,}</td></tr>
+                    <tr style="border-bottom: 2px solid #333;">
+                        <td class="desc-col" style="font-weight: bold; font-size: 15px;">Description</td>
+                        <td class="amount-col" style="font-weight: bold; font-size: 15px;">Amount</td>
+                    </tr>
+                    <tr>
+                        <td class="desc-col">Room Charge</td>
+                        <td class="amount-col">₱ {data.get('room_cost', 0):,}</td>
+                    </tr>
             """
 
             if data.get('svc_cost', 0) > 0:
-                html += f"<tr><td>Services</td> <td class='right'>Php {data['svc_cost']:,}</td></tr>"
+                html += f"""
+                    <tr>
+                        <td class="desc-col">Services</td>
+                        <td class="amount-col">₱ {data['svc_cost']:,}</td>
+                    </tr>
+                """
+
             if data.get('penalty', 0) > 0:
-                html += f"<tr><td>{data.get('penalty_desc', 'Penalty')}</td> <td class='right'>Php {data['penalty']:,}</td></tr>"
+                html += f"""
+                    <tr>
+                        <td class="desc-col">{data.get('penalty_desc', 'Penalty')}</td>
+                        <td class="amount-col">₱ {data['penalty']:,}</td>
+                    </tr>
+                """
 
             html += f"""
-                    <tr><td colspan="2" class="line"></td></tr>
-                    <tr><td><b>GRAND TOTAL</b></td> <td class="right"><b>Php {total:,}</b></td></tr>
-                    <tr><td>Amount Paid (Prev)</td> <td class="right">Php {prev:,}</td></tr>
-                    <tr><td><b>Amount Tendered</b></td> <td class="right"><b>Php {paid_now:,}</b></td></tr>
-                    <tr><td><b>Change</b></td> <td class="right"><b>Php {change:,}</b></td></tr>
+                    <tr class="line">
+                        <td colspan="2"></td>
+                    </tr>
+                    <tr class="total-row">
+                        <td class="desc-col">GRAND TOTAL</td>
+                        <td class="amount-col">₱ {total:,}</td>
+                    </tr>
+                    <tr>
+                        <td class="desc-col" style="padding-left: 20px;">Previously Paid</td>
+                        <td class="amount-col">₱ {prev:,}</td>
+                    </tr>
+                    <tr style="background-color: #f9f9f9;">
+                        <td class="desc-col" style="padding-left: 20px;"><b>Amount Tendered</b></td>
+                        <td class="amount-col"><b>₱ {paid_now:,}</b></td>
+                    </tr>
+                    <tr style="background-color: #e8f5e9;">
+                        <td class="desc-col" style="padding-left: 20px;"><b>CHANGE</b></td>
+                        <td class="amount-col"><b>₱ {change:,}</b></td>
+                    </tr>
                 </table>
-                <div class="footer"><p>Thank you for staying with us!</p></div>
+
+                <div class="footer">
+                    <p style="margin: 5px 0; font-size: 13px;"><b>{data.get('remark', 'Payment')}</b></p>
+                    <p style="margin: 15px 0 5px 0; font-size: 14px; font-weight: 600;">Thank you for staying with us!</p>
+                    <p style="margin: 5px 0;">This is a computer-generated receipt.</p>
+                </div>
             </body>
             </html>
             """
@@ -190,7 +288,7 @@ class StaffController:
             printer = QPrinter(QPrinter.PrinterMode.HighResolution)
             printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
             printer.setOutputFileName(full_path)
-            printer.setPageSize(QPageSize(QPageSize.PageSizeId.A6))
+            printer.setPageSize(QPageSize(QPageSize.PageSizeId.A5))  # 🟢 CHANGED: A6 → A5 for larger receipt
 
             # ⛔ CRITICAL FIX: DO NOT ADD SETPAGEMARGINS HERE. IT WILL CRASH.
 

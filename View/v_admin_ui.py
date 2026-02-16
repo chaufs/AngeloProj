@@ -7,15 +7,19 @@ from PyQt6.QtGui import QTextDocument
 from PyQt6.QtPrintSupport import QPrinter
 from datetime import datetime
 import calendar
-
 # --- STYLES ---
 TABLE_STYLE = """
     QTableWidget { background-color: white; color: #2C3E50; border: 1px solid #BDC3C7; border-radius: 5px; gridline-color: #ECF0F1; font-size: 13px; }
     QHeaderView::section { background-color: #2C3E50; color: white; font-weight: bold; border: none; padding: 10px; font-size: 13px; }
     QTableWidget::item { padding: 5px; }
-    QTableWidget::item:selected { background-color: #FDB515; color: black; }
+    QTableWidget::item:hover { background-color: #F5F6FA; }
 """
-
+# 🟢 Helper function to make tables non-clickable/non-editable
+def make_table_readonly(table):
+    """Make a table non-clickable and non-editable"""
+    table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+    table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+    table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 INPUT_STYLE = """
     QLineEdit, QComboBox, QSpinBox { 
         padding: 8px; 
@@ -32,7 +36,6 @@ INPUT_STYLE = """
         border: 1px solid #BDC3C7;
     }
 """
-
 GROUP_STYLE = """
     QGroupBox { 
         font-weight: bold; border: 1px solid #BDC3C7; margin-top: 10px; 
@@ -40,31 +43,23 @@ GROUP_STYLE = """
     } 
     QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }
 """
-
 MESSAGEBOX_STYLE = """
     QMessageBox { background-color: white; color: #2C3E50; }
     QMessageBox QLabel { color: #2C3E50; font-weight: bold; font-size: 14px; }
     QMessageBox QPushButton { background-color: #3498DB; color: white; padding: 6px 20px; border-radius: 4px; font-weight: bold; }
     QMessageBox QPushButton:hover { background-color: #2980B9; }
 """
-
-
 class ClickableFrame(QFrame):
     clicked = pyqtSignal(str)
-
     def __init__(self, card_type, parent=None):
         super().__init__(parent)
         self.card_type = card_type
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-
     def mousePressEvent(self, event):
         self.clicked.emit(self.card_type)
         super().mousePressEvent(event)
-
-
 class AdminHome(QWidget):
     switch_tab_signal = pyqtSignal(str)
-
     def __init__(self, ctrl):
         super().__init__();
         self.ctrl = ctrl;
@@ -78,13 +73,11 @@ class AdminHome(QWidget):
         self.timer.timeout.connect(self.update_clock);
         self.timer.start(1000);
         self.refresh_data()
-
     def refresh_data(self):
         while self.layout.count(): self.layout.takeAt(0).widget().deleteLater()
         self.create_header()
         self.create_stats()
         self.layout.addStretch()
-
     def create_header(self):
         f = QFrame();
         f.setFixedHeight(100);
@@ -104,52 +97,40 @@ class AdminHome(QWidget):
         h.addLayout(r);
         self.update_clock();
         self.layout.addWidget(f)
-
     def update_clock(self):
         if hasattr(self, 'time_lbl'): self.time_lbl.setText(
             QTime.currentTime().toString('hh:mm:ss AP')); self.date_lbl.setText(
             datetime.now().strftime('%A, %B %d, %Y'))
-
     def create_stats(self):
         gl = QGridLayout();
         gl.setSpacing(20)
         stats = self.ctrl.get_dashboard_stats()
-
         cards_data = [
             ("TOTAL BOOKINGS", stats.get('bookings', 0), "#3498DB", "bookings"),
             (f"REVENUE ({stats.get('year')})", f"₱{stats.get('revenue', 0):,}", "#2ECC71", "analytics"),
             ("TOTAL EMPLOYEES", stats.get('employees', 0), "#E67E22", "employees"),
             ("TOTAL ROOMS", stats.get('rooms', 0), "#9B59B6", "rooms")
         ]
-
         for i, (label, value, color, c_type) in enumerate(cards_data):
             card = ClickableFrame(c_type)
             card.setFixedHeight(140)
             card.setStyleSheet(f"background-color: {color}; border-radius: 10px; color: white;")
             card.clicked.connect(self.switch_tab_signal.emit)
-
             cl = QGridLayout(card)
             cl.setContentsMargins(20, 20, 20, 20)
-
             lbl_title = QLabel(str(label))
             lbl_title.setStyleSheet(
                 "font-size: 13px; font-weight: bold; background: transparent; color: rgba(255,255,255,0.9);")
             lbl_title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
             lbl_title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-
             lbl_val = QLabel(str(value))
             lbl_val.setStyleSheet("font-size: 40px; font-weight: 800; background: transparent;")
             lbl_val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
             lbl_val.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-
             cl.addWidget(lbl_title, 0, 0)
             cl.addWidget(lbl_val, 1, 0)
-
             gl.addWidget(card, i // 2, i % 2)
-
         self.layout.addLayout(gl)
-
-
 class AdminManagement(QWidget):
     def __init__(self, ctrl):
         super().__init__();
@@ -164,7 +145,6 @@ class AdminManagement(QWidget):
             QTabBar::tab { background: #E0E0E0; color: #555; padding: 10px 25px; font-weight: bold; border-top-left-radius: 5px; border-top-right-radius: 5px; margin-right: 2px; }
             QTabBar::tab:selected { background: #2C3E50; color: white; border-bottom: 3px solid #FDB515; }
         """)
-
         # 🟢 REMOVED: Analytics Tab from here
         self.pages = [
             BookingTab(ctrl),
@@ -177,18 +157,14 @@ class AdminManagement(QWidget):
             PaymentReportTab(ctrl),
             SystemLogsTab(ctrl)
         ]
-
         titles = ["Bookings", "Rooms", "Employees", "Maintenance", "History", "Services", "Payments", "System Logs"]
-
         for p, t in zip(self.pages, titles): self.tabs.addTab(p, t)
         layout.addWidget(self.tabs);
         self.setLayout(layout)
-
     def refresh_data(self):
         for p in self.pages:
             if hasattr(p, 'load'): p.load()
             if hasattr(p, 'refresh_data'): p.refresh_data()
-
     # 🟢 UPDATED: Navigate to correct tab index
     def navigate_to(self, tab_name):
         map_name = {
@@ -198,8 +174,6 @@ class AdminManagement(QWidget):
         }
         if tab_name in map_name:
             self.tabs.setCurrentIndex(map_name[tab_name])
-
-
 class EmployeesTab(QWidget):
     def __init__(self, ctrl):
         super().__init__()
@@ -208,10 +182,8 @@ class EmployeesTab(QWidget):
         self.t = QTableWidget(0, 6)
         self.t.setHorizontalHeaderLabels(["ID", "Name", "Role", "Contact", "Status", "Username"])
         self.t.setStyleSheet(TABLE_STYLE)
-
-        self.t.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        make_table_readonly(self.t)
         self.t.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.t.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         layout.addWidget(self.t, stretch=2)
         ctrl_panel = QVBoxLayout()
         gb_add = QGroupBox("Add New Employee")
@@ -269,7 +241,6 @@ class EmployeesTab(QWidget):
         layout.addLayout(ctrl_panel, stretch=1)
         self.toggle_account_fields(self.cb_role.currentText())
         self.load()
-
     def toggle_account_fields(self, role):
         if role == "Receptionist":
             self.gb_account.show()
@@ -277,7 +248,6 @@ class EmployeesTab(QWidget):
             self.gb_account.hide();
             self.inp_user.clear();
             self.inp_pass.clear()
-
     def load(self):
         self.t.setRowCount(0)
         for e in self.ctrl.get_employees():
@@ -298,7 +268,6 @@ class EmployeesTab(QWidget):
             self.t.setItem(r, 4, s_item)
             user_acc = e[5] if e[5] else "---"
             self.t.setItem(r, 5, QTableWidgetItem(str(user_acc)))
-
     def show_msg(self, title, txt, icon):
         msg = QMessageBox(self);
         msg.setWindowTitle(title);
@@ -307,7 +276,6 @@ class EmployeesTab(QWidget):
         msg.setStyleSheet(
             MESSAGEBOX_STYLE);
         msg.exec()
-
     def add_employee(self):
         name = self.inp_name.text();
         role = self.cb_role.currentText();
@@ -325,7 +293,6 @@ class EmployeesTab(QWidget):
             self.load()
         else:
             self.show_msg("Error", msg, QMessageBox.Icon.Warning)
-
     def set_status(self, status):
         row = self.t.currentRow()
         if row < 0: return self.show_msg("Error", "Select an employee.", QMessageBox.Icon.Warning)
@@ -334,8 +301,6 @@ class EmployeesTab(QWidget):
             self.load()
         else:
             self.show_msg("Error", msg, QMessageBox.Icon.Warning)
-
-
 class RoomMaintenanceTab(QWidget):
     def __init__(self, ctrl):
         super().__init__();
@@ -344,9 +309,8 @@ class RoomMaintenanceTab(QWidget):
         self.t = QTableWidget(0, 3);
         self.t.setHorizontalHeaderLabels(["Room No", "Type", "Status"]);
         self.t.setStyleSheet(TABLE_STYLE);
+        make_table_readonly(self.t)
         self.t.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch);
-        self.t.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows);
-        self.t.cellClicked.connect(self.on_row_click);
         layout.addWidget(self.t, stretch=2)
         ctrl_panel = QVBoxLayout()
         gb1 = QGroupBox("Availability Control");
@@ -378,7 +342,6 @@ class RoomMaintenanceTab(QWidget):
         layout.addLayout(ctrl_panel, stretch=1);
         self.selected_room = None;
         self.load()
-
     def load(self):
         self.t.setRowCount(0);
         self.selected_room = None
@@ -390,11 +353,9 @@ class RoomMaintenanceTab(QWidget):
             self.t.setItem(row, 2, QTableWidgetItem(str(r[2])))
             if str(r[2]) == "Maintenance":
                 for i in range(3): self.t.item(row, i).setBackground(Qt.GlobalColor.lightGray)
-
     def on_row_click(self, row, col):
         self.selected_room = self.t.item(row, 0).text();
         self.cb_type.setCurrentText(self.t.item(row, 1).text())
-
     def show_message(self, title, text, icon):
         msg = QMessageBox(self);
         msg.setWindowTitle(title);
@@ -403,7 +364,6 @@ class RoomMaintenanceTab(QWidget):
         msg.setStyleSheet(
             MESSAGEBOX_STYLE);
         msg.exec()
-
     def set_status(self, status):
         if not self.selected_room: return self.show_message("Error", "Select room.", QMessageBox.Icon.Warning)
         s, m = self.ctrl.set_room_status(self.selected_room, status)
@@ -412,7 +372,6 @@ class RoomMaintenanceTab(QWidget):
             self.load()
         else:
             self.show_message("Blocked", m, QMessageBox.Icon.Warning)
-
     def update_type(self):
         if not self.selected_room: return self.show_message("Error", "Select room.", QMessageBox.Icon.Warning)
         s, m = self.ctrl.change_room_type(self.selected_room, self.cb_type.currentText())
@@ -421,8 +380,6 @@ class RoomMaintenanceTab(QWidget):
             self.load()
         else:
             self.show_message("Blocked", m, QMessageBox.Icon.Warning)
-
-
 class BookingTab(QWidget):
     def __init__(self, ctrl):
         super().__init__();
@@ -431,10 +388,10 @@ class BookingTab(QWidget):
         self.t = QTableWidget(0, 7);
         self.t.setHorizontalHeaderLabels(["ID", "Name", "Email", "Phone", "Addr", "Type", "Date"]);
         self.t.setStyleSheet(TABLE_STYLE);
+        make_table_readonly(self.t)
         self.t.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch);
         self.layout().addWidget(self.t);
         self.load()
-
     def load(self):
         self.t.setRowCount(0)
         for b in self.ctrl.get_filtered_bookings("2020-01-01", "2030-12-31"):
@@ -442,8 +399,6 @@ class BookingTab(QWidget):
             self.t.insertRow(r);
             self.t.setItem(r, 0, QTableWidgetItem(f"B{b[0]:05d}"))
             for i in range(1, 7): self.t.setItem(r, i, QTableWidgetItem(str(b[i])))
-
-
 class RoomTab(QWidget):
     def __init__(self, ctrl):
         super().__init__();
@@ -452,20 +407,19 @@ class RoomTab(QWidget):
         self.t = QTableWidget(0, 3);
         self.t.setHorizontalHeaderLabels(["No", "Desc", "Status"]);
         self.t.setStyleSheet(TABLE_STYLE);
+        make_table_readonly(self.t)
         self.t.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch);
         self.layout().addWidget(self.t);
         btn = QPushButton("Add Room");
         btn.clicked.connect(self.add);
         self.layout().addWidget(btn);
         self.load()
-
     def load(self):
         self.t.setRowCount(0)
         for r in self.ctrl.get_all_rooms():
             row = self.t.rowCount();
             self.t.insertRow(row);
             [self.t.setItem(row, i, QTableWidgetItem(str(r[i]))) for i in range(3)]
-
     def add(self):
         d = QDialog(self);
         f = QFormLayout(d);
@@ -483,8 +437,6 @@ class RoomTab(QWidget):
             lambda: [self.ctrl.save_room(True, [n.text(), de.text(), s.text()]), d.accept(), self.load()]);
         f.addRow(b);
         d.exec()
-
-
 class RoomHistoryTab(QWidget):
     def __init__(self, ctrl):
         super().__init__();
@@ -504,9 +456,9 @@ class RoomHistoryTab(QWidget):
         self.t = QTableWidget(0, 6);
         self.t.setHorizontalHeaderLabels(["Booking ID", "Guest Name", "Date", "Duration", "Status", "Booked By"]);
         self.t.setStyleSheet(TABLE_STYLE);
+        make_table_readonly(self.t)
         self.t.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch);
         l.addWidget(self.t)
-
     def search(self):
         rid = self.inp.text().strip();
         if not rid: return
@@ -522,11 +474,8 @@ class RoomHistoryTab(QWidget):
             self.t.setItem(r, 3, QTableWidgetItem(f"{h[3]} Days"));
             self.t.setItem(r, 4, QTableWidgetItem(str(h[4])));
             self.t.setItem(r, 5, QTableWidgetItem(str(h[5])))
-
     def load(self):
         pass
-
-
 class SystemLogsTab(QWidget):
     def __init__(self, ctrl):
         super().__init__();
@@ -535,10 +484,10 @@ class SystemLogsTab(QWidget):
         self.t = QTableWidget(0, 5);
         self.t.setHorizontalHeaderLabels(["Booking ID", "Guest", "Action", "Performed By", "Timestamp"]);
         self.t.setStyleSheet(TABLE_STYLE);
+        make_table_readonly(self.t)
         self.t.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch);
         self.layout().addWidget(self.t);
         self.load()
-
     def load(self):
         self.t.setRowCount(0);
         logs = self.ctrl.get_activity_logs()
@@ -555,8 +504,6 @@ class SystemLogsTab(QWidget):
             self.t.setItem(r, 2, QTableWidgetItem(str(action)));
             self.t.setItem(r, 3, QTableWidgetItem(str(staff)));
             self.t.setItem(r, 4, QTableWidgetItem(str(time)))
-
-
 class ServicesReportTab(QWidget):
     def __init__(self, ctrl):
         super().__init__();
@@ -565,10 +512,10 @@ class ServicesReportTab(QWidget):
         self.t = QTableWidget(0, 5);
         self.t.setHorizontalHeaderLabels(["Date", "ID", "Room", "Service", "Price"]);
         self.t.setStyleSheet(TABLE_STYLE);
+        make_table_readonly(self.t)
         self.t.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch);
         self.layout().addWidget(self.t);
         self.load()
-
     def load(self):
         self.t.setRowCount(0)
         for s in self.ctrl.get_all_services():
@@ -576,8 +523,6 @@ class ServicesReportTab(QWidget):
             self.t.insertRow(r);
             items = [str(s[5]), s[1], s[2], s[3], f"₱{s[4]}"];
             for i, v in enumerate(items): self.t.setItem(r, i, QTableWidgetItem(str(v)))
-
-
 class PaymentReportTab(QWidget):
     def __init__(self, ctrl):
         super().__init__();
@@ -587,10 +532,10 @@ class PaymentReportTab(QWidget):
         self.t.setHorizontalHeaderLabels(
             ["ID", "BookID", "Guest", "Room$", "Svc$", "Total", "Method", "Date", "Staff", "Remark"]);
         self.t.setStyleSheet(TABLE_STYLE);
+        make_table_readonly(self.t)
         self.t.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch);
         self.layout().addWidget(self.t);
         self.load()
-
     def load(self):
         self.t.setRowCount(0)
         for p in self.ctrl.get_all_payments():
@@ -600,8 +545,6 @@ class PaymentReportTab(QWidget):
             remarks = p[11] if len(p) > 11 else "Payment"
             items = [p[0], p[1], p[2], p[3], p[4], p[5], p[6], str(p[7]), processed_by, remarks]
             for i, v in enumerate(items): self.t.setItem(r, i, QTableWidgetItem(str(v)))
-
-
 class AdminSummary(QWidget):
     def __init__(self, ctrl):
         super().__init__()
@@ -612,18 +555,15 @@ class AdminSummary(QWidget):
         self.figures = {}
         self.plt = None
         self.MaxNLocator = None
-
         self.main_layout = QVBoxLayout()
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(10)
         self.setLayout(self.main_layout)
-
         self.setup_header()
         self.setup_financial_banner()
         self.setup_content()
         self.load_charts_module()
         self.populate_filters()
-
     def load_charts_module(self):
         try:
             import matplotlib
@@ -631,77 +571,62 @@ class AdminSummary(QWidget):
             from matplotlib.figure import Figure as Fig
             import matplotlib.pyplot as plt
             from matplotlib.ticker import MaxNLocator
-
             self.plt = plt
             self.FigureCanvas = FC
             self.Figure = Fig
             self.MaxNLocator = MaxNLocator
         except ImportError:
             pass
-
     def setup_header(self):
         h = QHBoxLayout()
         h.addWidget(QLabel("Analytics Dashboard", styleSheet="font-size: 24px; font-weight: 800; color: #2C3E50;"))
         h.addStretch()
-
         self.cb_year = QComboBox();
         self.cb_year.setStyleSheet(INPUT_STYLE)
         self.cb_year.currentTextChanged.connect(self.on_year_changed)
-
         self.cb_month = QComboBox();
         self.cb_month.setStyleSheet(INPUT_STYLE)
         self.cb_month.currentIndexChanged.connect(self.load_data)
-
         btn_pdf = QPushButton("Export PDF")
         btn_pdf.setStyleSheet(
             "background: #E67E22; color: white; padding: 5px 15px; font-weight: bold; border-radius: 5px;")
         btn_pdf.clicked.connect(self.export_pdf)
-
         h.addWidget(QLabel("Year:", styleSheet="color:#555; font-weight:bold;"))
         h.addWidget(self.cb_year)
         h.addWidget(QLabel("Month:", styleSheet="color:#555; font-weight:bold;"))
         h.addWidget(self.cb_month)
         h.addWidget(btn_pdf)
         self.main_layout.addLayout(h)
-
     def setup_financial_banner(self):
         self.banner = QFrame()
         self.banner.setFixedHeight(90)
         self.banner.setStyleSheet("background: white; border-radius: 10px; border: 1px solid #BDC3C7;")
         layout = QHBoxLayout(self.banner)
         layout.setContentsMargins(20, 10, 20, 10)
-
         self.lbl_month_name = QLabel("Current Overview")
         self.lbl_month_name.setStyleSheet("font-size: 16px; font-weight: bold; color: #7F8C8D;")
         layout.addWidget(self.lbl_month_name)
         layout.addStretch()
-
         self.lbl_room_rev = QLabel("Room Rev: ₱0")
         self.lbl_room_rev.setStyleSheet(
             "font-size: 14px; font-weight: bold; color: #27AE60; background: #EAFAF1; padding: 8px; border-radius: 5px;")
         layout.addWidget(self.lbl_room_rev)
-
         self.lbl_svc_rev = QLabel("Service Rev: ₱0")
         self.lbl_svc_rev.setStyleSheet(
             "font-size: 14px; font-weight: bold; color: #F39C12; background: #FEF9E7; padding: 8px; border-radius: 5px;")
         layout.addWidget(self.lbl_svc_rev)
-
         self.lbl_total_rev = QLabel("TOTAL: ₱0")
         self.lbl_total_rev.setStyleSheet("font-size: 20px; font-weight: 800; color: #2C3E50; margin-left: 20px;")
         layout.addWidget(self.lbl_total_rev)
-
         self.main_layout.addWidget(self.banner)
-
     def update_financial_banner(self, rev_room, rev_svc, total):
         period = self.cb_month.currentText() + " " + self.cb_year.currentText()
         if self.cb_month.currentText() == "All":
             period = f"Annual Report {self.cb_year.currentText()}"
-
         self.lbl_month_name.setText(period)
         self.lbl_room_rev.setText(f"Room Rev: ₱{rev_room:,}")
         self.lbl_svc_rev.setText(f"Service Rev: ₱{rev_svc:,}")
         self.lbl_total_rev.setText(f"TOTAL: ₱{total:,}")
-
     def setup_content(self):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -713,7 +638,6 @@ class AdminSummary(QWidget):
         self.cl.addLayout(self.chart_grid)
         scroll.setWidget(content)
         self.main_layout.addWidget(scroll)
-
     def populate_filters(self):
         self.available_data = self.ctrl.get_available_dates()
         self.cb_year.blockSignals(True)
@@ -724,7 +648,6 @@ class AdminSummary(QWidget):
             self.cb_year.blockSignals(False);
             self.on_year_changed(self.cb_year.currentText());
             return
-
         self.cb_year.addItems(years)
         # Select Current Year
         curr = str(datetime.now().year)
@@ -734,7 +657,6 @@ class AdminSummary(QWidget):
             self.cb_year.setCurrentIndex(0)
         self.cb_year.blockSignals(False)
         self.on_year_changed(self.cb_year.currentText())
-
     def on_year_changed(self, year):
         self.cb_month.blockSignals(True)
         self.cb_month.clear()
@@ -743,7 +665,6 @@ class AdminSummary(QWidget):
             import calendar
             for m in self.available_data[year]:
                 self.cb_month.addItem(calendar.month_name[int(m)], userData=m)
-
         # Select Current Month
         curr = f"{datetime.now().month:02d}"
         idx = self.cb_month.findData(curr)
@@ -753,13 +674,11 @@ class AdminSummary(QWidget):
             self.cb_month.setCurrentIndex(0)
         self.cb_month.blockSignals(False)
         self.load_data()
-
     def load_data(self):
         if not self.plt: return
         year = self.cb_year.currentText()
         month_idx = self.cb_month.currentData()
         if not year: return
-
         if month_idx:
             import calendar
             last = calendar.monthrange(int(year), int(month_idx))[1]
@@ -768,32 +687,24 @@ class AdminSummary(QWidget):
         else:
             s_date = f"{year}-01-01";
             e_date = f"{year}-12-31"
-
         data = self.ctrl.get_analytics(s_date, e_date)
-
         total = data['rev_room'] + data['rev_svc']
         self.update_financial_banner(data['rev_room'], data['rev_svc'], total)
-
         while self.chart_grid.count(): self.chart_grid.takeAt(0).widget().deleteLater()
-
         f1 = self.frame("Revenue Breakdown")
         self.pie(f1, data['rev_room'], data['rev_svc'])
         self.chart_grid.addWidget(f1, 0, 0)
-
         f2 = self.frame("Most Used Room Types")
         self.bar_rooms(f2, data['room_counts'])
         self.chart_grid.addWidget(f2, 0, 1)
-
         f3 = self.frame("Top Services Offered")
         self.bar_services(f3, data['svc_counts'])
         self.chart_grid.addWidget(f3, 1, 0, 1, 2)
-
     # 🔴 UPDATED: Fix unreadable message box
     def export_pdf(self):
         year = self.cb_year.currentText();
         month = self.cb_month.currentData() or "All"
         s, m = self.ctrl.export_report(year, month)
-
         # Create a custom message box to apply the stylesheet
         msg = QMessageBox(self)
         msg.setWindowTitle("Export")
@@ -801,14 +712,12 @@ class AdminSummary(QWidget):
         msg.setIcon(QMessageBox.Icon.Information if s else QMessageBox.Icon.Warning)
         msg.setStyleSheet(MESSAGEBOX_STYLE)  # Force readability style
         msg.exec()
-
     def frame(self, t):
         f = QFrame(styleSheet="background: white; border: 1px solid #BDC3C7; border-radius: 8px;")
         f.setMinimumHeight(350);
         l = QVBoxLayout(f)
         l.addWidget(QLabel(t, styleSheet="font-weight:bold; color:#2C3E50; border:none;"))
         return f
-
     def pie(self, f, r, s):
         if r == 0 and s == 0: f.layout().addWidget(QLabel("No Revenue Data")); return
         fig = self.Figure(figsize=(4, 4), dpi=100);
@@ -817,7 +726,6 @@ class AdminSummary(QWidget):
         c = self.FigureCanvas(fig);
         f.layout().addWidget(c);
         c.draw()
-
     def bar_rooms(self, f, d):
         if not d: f.layout().addWidget(QLabel("No Data")); return
         fig = self.Figure(figsize=(4, 4), dpi=100);
@@ -828,7 +736,6 @@ class AdminSummary(QWidget):
         c = self.FigureCanvas(fig);
         f.layout().addWidget(c);
         c.draw()
-
     def bar_services(self, f, d):
         if not d: f.layout().addWidget(QLabel("No Data")); return
         fig = self.Figure(figsize=(8, 4), dpi=100);
@@ -839,10 +746,8 @@ class AdminSummary(QWidget):
         c = self.FigureCanvas(fig);
         f.layout().addWidget(c);
         c.draw()
-
     def refresh_data(self):
         self.populate_filters()
-
     # 🟢 NEW: Called by Dashboard to auto-set defaults
     def set_annual_view(self):
         current_year = str(datetime.now().year)

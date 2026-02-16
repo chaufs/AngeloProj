@@ -11,6 +11,45 @@ class AdminController:
     def __init__(self):
         self.model = AdminModel()
 
+    # 🟢 HELPER: Format Card Number for Display
+    @staticmethod
+    def format_card_number(card_num, method):
+        """
+        Format card number based on payment method
+        Credit Card: **** **** **** 1234
+        Debit Card: **** **** 1234
+        """
+        if not card_num or card_num == 'None' or str(card_num).strip() == '':
+            return "N/A"
+
+        # Remove any existing spaces or dashes
+        card_num = str(card_num).replace(' ', '').replace('-', '').replace('*', '')
+
+        # Ensure it's all digits
+        if not card_num.isdigit():
+            return "Invalid"
+
+        if "Credit" in str(method):
+            # Credit Card: Show last 4 digits, mask first 12 (**** **** **** 1234)
+            if len(card_num) >= 16:
+                last_four = card_num[-4:]
+                return f"**** **** **** {last_four}"
+            elif len(card_num) >= 4:
+                last_four = card_num[-4:]
+                return f"**** {last_four}"
+            return card_num
+        elif "Debit" in str(method):
+            # Debit Card: Show last 4 digits, mask first 8 (**** **** 1234)
+            if len(card_num) >= 12:
+                last_four = card_num[-4:]
+                return f"**** **** {last_four}"
+            elif len(card_num) >= 4:
+                last_four = card_num[-4:]
+                return f"**** {last_four}"
+            return card_num
+        else:
+            return "N/A"
+
     # 🟢 DASHBOARD: New Stats Logic
     def get_dashboard_stats(self):
         current_year = datetime.now().year
@@ -147,11 +186,13 @@ class AdminController:
 
             <h2>1. Revenue / Payments</h2>
             <table width="100%" border="0" cellspacing="0" cellpadding="4">
-                <tr><th>ID</th><th>Guest</th><th>Amount</th><th>Method</th><th>Date</th></tr>
+                <tr><th>ID</th><th>Guest</th><th>Amount</th><th>Method</th><th>Card Number</th><th>Date</th></tr>
         """
         for p in payments:
-            html += f"<tr><td>{p[1]}</td><td>{p[2]}</td><td>₱{p[5]:,}</td><td>{p[6]}</td><td>{p[7]}</td></tr>"
-        if not payments: html += "<tr><td colspan='5' align='center'>No Data</td></tr>"
+            # p[9] = card_number, p[6] = method
+            card_display = self.format_card_number(p[9], p[6])
+            html += f"<tr><td>{p[1]}</td><td>{p[2]}</td><td>₱{p[5]:,}</td><td>{p[6]}</td><td>{card_display}</td><td>{p[7]}</td></tr>"
+        if not payments: html += "<tr><td colspan='6' align='center'>No Data</td></tr>"
         html += "</table>"
 
         html += f"""

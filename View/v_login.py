@@ -168,7 +168,7 @@ class LoginView(QWidget):
 
     def update_peek_icon(self):
         is_password = (self.pwd.echoMode() == QLineEdit.EchoMode.Password)
-        self.peek_btn.setText("Show" if is_password else "Hide")
+        self.peek_btn.setText("SHOW" if is_password else "HIDE")
 
     def do_login(self):
         u, p = self.user.text().strip(), self.pwd.text().strip()

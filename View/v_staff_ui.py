@@ -617,27 +617,159 @@ class BookingPage(QWidget):
                 QMessageBox.critical(self, "Error", msg)
 
 
+# ==========================================
+# CUSTOM MASKED CARD INPUT WIDGET
+# ==========================================
+class MaskedCardInput(QLineEdit):
+    """Card input that shows masked dots while typing but stores the actual number"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.actual_value = ""  # Store the real card number
+        self.is_showing = False  # Track if we're showing the real number
+        self.setMaxLength(19)  # 16 digits + 3 spaces for formatting
+
+        # Add show/hide button inside the input
+        self.toggle_btn = QPushButton("SHOW", self)
+        self.toggle_btn.setFixedSize(30, 30)
+        self.toggle_btn.setStyleSheet("""
+            QPushButton {
+                border: none;
+                background: transparent;
+                font-size: 10px;
+                padding: 0;
+            }
+            QPushButton:hover {
+                background-color: rgba(0,0,0,0.1);
+                border-radius: 4px;
+            }
+        """)
+        self.toggle_btn.clicked.connect(self.toggle_visibility)
+        self.toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        # Position the button
+        self.textChanged.connect(self._on_text_changed)
+
+    def resizeEvent(self, event):
+        """Position the toggle button on the right side"""
+        button_size = self.toggle_btn.size()
+        frame_width = self.style().pixelMetric(self.style().PixelMetric.PM_DefaultFrameWidth)
+        self.toggle_btn.move(
+            self.rect().right() - button_size.width() - frame_width - 5,
+            (self.rect().bottom() + 1 - button_size.height()) // 2
+        )
+        super().resizeEvent(event)
+
+    def _on_text_changed(self, text):
+        """Handle text input and masking"""
+        if self.is_showing:
+            # When showing, update actual_value directly
+            self.actual_value = text.replace(' ', '').replace('•', '')
+        else:
+            # When masked, extract only new digits
+            cursor_pos = self.cursorPosition()
+            old_len = len(self.actual_value)
+
+            # Remove formatting to get raw input
+            raw = text.replace(' ', '').replace('•', '')
+
+            # Only update if it's digits
+            if raw.isdigit() or raw == '':
+                self.actual_value = raw
+
+                # Update display with masked version
+                self.blockSignals(True)
+                if len(self.actual_value) > 0:
+                    # Format: •••• •••• •••• 1234
+                    masked = self._format_card_masked(self.actual_value)
+                    self.setText(masked)
+
+                    # Try to maintain cursor position
+                    if len(self.actual_value) > old_len:
+                        self.setCursorPosition(min(cursor_pos + 1, len(masked)))
+                    else:
+                        self.setCursorPosition(min(cursor_pos, len(masked)))
+                else:
+                    self.clear()
+                self.blockSignals(False)
+
+    def _format_card_masked(self, number):
+        """Format card number with bullets, showing only last 4 digits"""
+        if len(number) <= 4:
+            return '• ' * len(number)
+        else:
+            masked_part = '•' * (len(number) - 4)
+            visible_part = number[-4:]
+            full = masked_part + visible_part
+
+            # Add spaces every 4 characters
+            return ' '.join([full[i:i + 4] for i in range(0, len(full), 4)])
+
+    def _format_card_visible(self, number):
+        """Format card number with spaces (1234 5678 9012 3456)"""
+        return ' '.join([number[i:i + 4] for i in range(0, len(number), 4)])
+
+    def toggle_visibility(self):
+        """Toggle between showing and hiding the card number"""
+        self.is_showing = not self.is_showing
+        self.blockSignals(True)
+
+        if self.is_showing:
+            # Show the real number
+            self.toggle_btn.setText("SHOW")
+            formatted = self._format_card_visible(self.actual_value)
+            self.setText(formatted)
+        else:
+            # Show masked version
+            self.toggle_btn.setText("HIDE")
+            if self.actual_value:
+                masked = self._format_card_masked(self.actual_value)
+                self.setText(masked)
+            else:
+                self.clear()
+
+        self.blockSignals(False)
+
+    def get_card_number(self):
+        """Get the actual card number without formatting"""
+        return self.actual_value
+
+    def set_card_number(self, number):
+        """Set the card number programmatically"""
+        self.actual_value = str(number).replace(' ', '')
+        if not self.is_showing and self.actual_value:
+            self.setText(self._format_card_masked(self.actual_value))
+        elif self.actual_value:
+            self.setText(self._format_card_visible(self.actual_value))
+
+
 class PaymentDialog(QDialog):
     def __init__(self, parent, total):
         super().__init__(parent);
         self.setWindowTitle("Payment");
-        self.setFixedSize(400, 400)
+        self.setFixedSize(450, 450)  # Slightly larger for better layout
         self.total = total;
         self.data = {}
         l = QVBoxLayout(self);
         l.setSpacing(15);
         l.setContentsMargins(30, 30, 30, 30)
         l.addWidget(QLabel(f"Total Amount: ₱{total:,}", styleSheet="font-size:20px; font-weight:bold; color:#2C3E50;"))
+
+        # Payment Method Selection
         self.cb = QComboBox();
         self.cb.addItems(["Cash (Walk-in)", "Debit Card", "Credit Card"]);
         self.cb.setStyleSheet(INPUT_STYLE);
         self.cb.currentTextChanged.connect(self.chk);
         l.addWidget(QLabel("Payment Method:"));
         l.addWidget(self.cb)
-        self.card_inp = QLineEdit(placeholderText="Enter Credit Card Number");
-        self.card_inp.setStyleSheet(INPUT_STYLE);
+
+        # 🟢 NEW: Use MaskedCardInput instead of regular QLineEdit
+        self.card_inp = MaskedCardInput(placeholderText="Enter Card Number");
+        self.card_inp.setStyleSheet(INPUT_STYLE + " QLineEdit { padding-right: 40px; }");  # Space for toggle button
         self.card_inp.hide();
         l.addWidget(self.card_inp)
+
+        # Amount to pay spinner
         self.spin = QSpinBox();
         self.spin.setRange(0, total);
         self.spin.setValue(int(total * 0.20));
@@ -645,10 +777,12 @@ class PaymentDialog(QDialog):
         self.lbl_amt = QLabel("Amount to Pay:");
         l.addWidget(self.lbl_amt);
         l.addWidget(self.spin)
+
         self.lbl_note = QLabel("Minimum 20% downpayment required.");
         self.lbl_note.setWordWrap(True);
         self.lbl_note.setStyleSheet("color:#7f8c8d; font-style:italic;");
         l.addWidget(self.lbl_note)
+
         btn = QPushButton("Confirm Booking");
         btn.setStyleSheet(BTN_STYLE);
         btn.clicked.connect(self.save);
@@ -656,29 +790,47 @@ class PaymentDialog(QDialog):
         self.chk("Cash (Walk-in)")
 
     def chk(self, m):
-        if "Credit Card" in m:
+        # 🟢 UPDATED: Show card input for BOTH Debit and Credit cards
+        if "Card" in m:  # This covers both "Debit Card" and "Credit Card"
+            self.card_inp.setPlaceholderText(f"Enter {m} Number")
             self.card_inp.show();
-            self.spin.hide();
-            self.lbl_amt.hide();
-            self.spin.setValue(0);
-            self.lbl_note.setText(
-                "Credit Card Guarantee. No immediate charge.")
+
+            if "Credit" in m:
+                # Credit Card: No upfront payment required
+                self.spin.hide();
+                self.lbl_amt.hide();
+                self.spin.setValue(0);
+                self.lbl_note.setText("Credit Card Guarantee. No immediate charge.")
+            else:
+                # Debit Card: Still requires downpayment
+                self.spin.show();
+                self.lbl_amt.show();
+                min_dp = int(self.total * 0.20);
+                self.spin.setRange(min_dp, self.total);
+                self.spin.setValue(min_dp);
+                self.lbl_note.setText(f"Minimum 20% Downpayment: ₱{min_dp:,}")
         else:
+            # Cash payment
             self.card_inp.hide();
             self.spin.show();
             self.lbl_amt.show();
-            min_dp = int(
-                self.total * 0.20);
+            min_dp = int(self.total * 0.20);
             self.spin.setRange(min_dp, self.total);
-            self.spin.setValue(
-                min_dp);
+            self.spin.setValue(min_dp);
             self.lbl_note.setText(f"Minimum 20% Downpayment: ₱{min_dp:,}")
 
     def save(self):
         method = self.cb.currentText()
-        if "Credit Card" in method and not self.card_inp.text().strip(): return QMessageBox.warning(self, "Error",
-                                                                                                    "Please enter the Credit Card Number.")
-        self.data = {'amount': self.spin.value(), 'method': method, 'card_number': self.card_inp.text()};
+        # 🟢 UPDATED: Validate card input for ANY card type
+        if "Card" in method:
+            card_num = self.card_inp.get_card_number()
+            if not card_num or len(card_num) < 12:
+                return QMessageBox.warning(self, "Error",
+                                           f"Please enter a valid {method} Number (at least 12 digits).")
+            self.data = {'amount': self.spin.value(), 'method': method, 'card_number': card_num}
+        else:
+            self.data = {'amount': self.spin.value(), 'method': method, 'card_number': None}
+
         self.accept()
 
 
