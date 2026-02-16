@@ -43,8 +43,8 @@ GROUP_STYLE = """
 
 MESSAGEBOX_STYLE = """
     QMessageBox { background-color: white; color: #2C3E50; }
-    QMessageBox QLabel { color: #2C3E50; font-weight: bold; }
-    QMessageBox QPushButton { background-color: #3498DB; color: white; padding: 5px 15px; border-radius: 3px; font-weight: bold; }
+    QMessageBox QLabel { color: #2C3E50; font-weight: bold; font-size: 14px; }
+    QMessageBox QPushButton { background-color: #3498DB; color: white; padding: 6px 20px; border-radius: 4px; font-weight: bold; }
     QMessageBox QPushButton:hover { background-color: #2980B9; }
 """
 
@@ -200,10 +200,6 @@ class AdminManagement(QWidget):
             self.tabs.setCurrentIndex(map_name[tab_name])
 
 
-# ... [Keep EmployeesTab, RoomMaintenanceTab, BookingTab, RoomTab, RoomHistoryTab, SystemLogsTab, ServicesReportTab, PaymentReportTab exactly as they were] ...
-# NOTE: For brevity, I am not re-pasting these classes as they haven't changed logic.
-# PLEASE ENSURE YOU KEEP THEM IN THE FILE.
-
 class EmployeesTab(QWidget):
     def __init__(self, ctrl):
         super().__init__()
@@ -213,7 +209,7 @@ class EmployeesTab(QWidget):
         self.t.setHorizontalHeaderLabels(["ID", "Name", "Role", "Contact", "Status", "Username"])
         self.t.setStyleSheet(TABLE_STYLE)
 
-        self.t.EditTrigger(False)
+        self.t.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.t.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.t.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         layout.addWidget(self.t, stretch=2)
@@ -278,7 +274,9 @@ class EmployeesTab(QWidget):
         if role == "Receptionist":
             self.gb_account.show()
         else:
-            self.gb_account.hide(); self.inp_user.clear(); self.inp_pass.clear()
+            self.gb_account.hide();
+            self.inp_user.clear();
+            self.inp_pass.clear()
 
     def load(self):
         self.t.setRowCount(0)
@@ -302,8 +300,13 @@ class EmployeesTab(QWidget):
             self.t.setItem(r, 5, QTableWidgetItem(str(user_acc)))
 
     def show_msg(self, title, txt, icon):
-        msg = QMessageBox(self); msg.setWindowTitle(title); msg.setText(txt); msg.setIcon(icon); msg.setStyleSheet(
-            MESSAGEBOX_STYLE); msg.exec()
+        msg = QMessageBox(self);
+        msg.setWindowTitle(title);
+        msg.setText(txt);
+        msg.setIcon(icon);
+        msg.setStyleSheet(
+            MESSAGEBOX_STYLE);
+        msg.exec()
 
     def add_employee(self):
         name = self.inp_name.text();
@@ -314,7 +317,12 @@ class EmployeesTab(QWidget):
         success, msg = self.ctrl.add_new_employee(name, role, contact, user, pwd)
         if success:
             self.show_msg("Success", msg,
-                          QMessageBox.Icon.Information); self.inp_name.clear(); self.inp_contact.clear(); self.inp_user.clear(); self.inp_pass.clear(); self.load()
+                          QMessageBox.Icon.Information);
+            self.inp_name.clear();
+            self.inp_contact.clear();
+            self.inp_user.clear();
+            self.inp_pass.clear();
+            self.load()
         else:
             self.show_msg("Error", msg, QMessageBox.Icon.Warning)
 
@@ -384,17 +392,24 @@ class RoomMaintenanceTab(QWidget):
                 for i in range(3): self.t.item(row, i).setBackground(Qt.GlobalColor.lightGray)
 
     def on_row_click(self, row, col):
-        self.selected_room = self.t.item(row, 0).text(); self.cb_type.setCurrentText(self.t.item(row, 1).text())
+        self.selected_room = self.t.item(row, 0).text();
+        self.cb_type.setCurrentText(self.t.item(row, 1).text())
 
     def show_message(self, title, text, icon):
-        msg = QMessageBox(self); msg.setWindowTitle(title); msg.setText(text); msg.setIcon(icon); msg.setStyleSheet(
-            MESSAGEBOX_STYLE); msg.exec()
+        msg = QMessageBox(self);
+        msg.setWindowTitle(title);
+        msg.setText(text);
+        msg.setIcon(icon);
+        msg.setStyleSheet(
+            MESSAGEBOX_STYLE);
+        msg.exec()
 
     def set_status(self, status):
         if not self.selected_room: return self.show_message("Error", "Select room.", QMessageBox.Icon.Warning)
         s, m = self.ctrl.set_room_status(self.selected_room, status)
         if s:
-            self.show_message("Success", m, QMessageBox.Icon.Information); self.load()
+            self.show_message("Success", m, QMessageBox.Icon.Information);
+            self.load()
         else:
             self.show_message("Blocked", m, QMessageBox.Icon.Warning)
 
@@ -402,7 +417,8 @@ class RoomMaintenanceTab(QWidget):
         if not self.selected_room: return self.show_message("Error", "Select room.", QMessageBox.Icon.Warning)
         s, m = self.ctrl.change_room_type(self.selected_room, self.cb_type.currentText())
         if s:
-            self.show_message("Success", m, QMessageBox.Icon.Information); self.load()
+            self.show_message("Success", m, QMessageBox.Icon.Information);
+            self.load()
         else:
             self.show_message("Blocked", m, QMessageBox.Icon.Warning)
 
@@ -772,14 +788,19 @@ class AdminSummary(QWidget):
         self.bar_services(f3, data['svc_counts'])
         self.chart_grid.addWidget(f3, 1, 0, 1, 2)
 
+    # 🔴 UPDATED: Fix unreadable message box
     def export_pdf(self):
         year = self.cb_year.currentText();
         month = self.cb_month.currentData() or "All"
         s, m = self.ctrl.export_report(year, month)
-        if s:
-            QMessageBox.information(self, "Export", m)
-        else:
-            QMessageBox.warning(self, "Export", m)
+
+        # Create a custom message box to apply the stylesheet
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Export")
+        msg.setText(m)
+        msg.setIcon(QMessageBox.Icon.Information if s else QMessageBox.Icon.Warning)
+        msg.setStyleSheet(MESSAGEBOX_STYLE)  # Force readability style
+        msg.exec()
 
     def frame(self, t):
         f = QFrame(styleSheet="background: white; border: 1px solid #BDC3C7; border-radius: 8px;")

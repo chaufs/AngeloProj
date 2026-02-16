@@ -1,12 +1,11 @@
-from PyQt6.QtCore import QMarginsF
-
 from Model.m_staff import StaffModel
 from datetime import datetime, date, timedelta
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 from PyQt6.QtPrintSupport import QPrinter
 from PyQt6.QtGui import QTextDocument, QPageSize
-
 import os
+
+
 class StaffController:
     def __init__(self):
         self.model = StaffModel()
@@ -18,11 +17,9 @@ class StaffController:
 
     MAX_OCCUPANCY = {"Single": 1, "Double": 2, "Queen": 3, "King": 4, "Suite": 6}
 
-    # 🟢 NEW: Get only Room Service employees
     def get_service_staff_list(self):
         return self.model.get_service_staff()
 
-    # 🟢 NEW: Calculate Bill with Early/Overstay Logic
     def calculate_bill(self, bid):
         data = self.model.get_booking_details_for_bill(bid)
         if not data: return None
@@ -31,25 +28,18 @@ class StaffController:
             fmt = "%Y-%m-%d"
             start_d = datetime.strptime(data['start_date'], fmt).date()
             today_d = datetime.now().date()
-
-            # Expected Checkout
             expected_end = start_d + timedelta(days=data['days'])
 
             penalty = 0
             penalty_desc = ""
 
-            # 1. Early Departure (Leaving before scheduled end)
             if today_d < expected_end:
-                # Rule: 50% charge of daily rate for early leave
                 daily_rate = data['room_cost'] / data['days']
                 penalty = daily_rate * 0.5
-                penalty_desc = f"Early Departure Fee (0.5 Night)"
-
-            # 2. Overstay (Staying past scheduled end)
+                penalty_desc = "Early Departure Fee (0.5 Night)"
             elif today_d > expected_end:
                 overstay_days = (today_d - expected_end).days
                 daily_rate = data['room_cost'] / data['days']
-                # Rule: 150% charge per overstay night
                 penalty = daily_rate * overstay_days * 1.5
                 penalty_desc = f"Overstay Penalty ({overstay_days} days @ 150%)"
 
@@ -57,9 +47,7 @@ class StaffController:
             data['penalty_desc'] = penalty_desc
             data['final_total'] = data['total'] + int(penalty)
             data['final_balance'] = data['final_total'] - data['paid']
-
             return data
-
         except Exception as e:
             print("Calc Error:", e)
             return data
@@ -68,54 +56,67 @@ class StaffController:
         raw_data = self.model.get_checkout_candidates()
         card_list = []
         for r in raw_data:
-            # r = [room_num, bid, price, name]
-            financials = self.calculate_bill(r[1])  # Pass Booking ID
+            financials = self.calculate_bill(r[1])
             if financials:
                 financials['room'] = r[0]
-                financials['bid'] = r[1]  # Ensure ID is passed
+                financials['bid'] = r[1]
                 card_list.append(financials)
         return card_list
 
-    # 🟢 UPDATED: Generate Receipt & Handle Checkout
     def process_checkout(self, data, tendered_amount, method):
-        bid = data['bid']
+        try:
+            bid = data['bid']
+            # 🟢 Get guest name safely (handles both 'guest' and 'name' keys)
+            guest_name = data.get('guest', data.get('name', 'Guest'))
 
-        # Calculate totals
-        total_bill = data['final_total']
-        paid_prev = data['paid']
-        balance = total_bill - paid_prev
+            # Calculate totals
+            total_bill = data['final_total']
+            paid_prev = data['paid']
+            balance = total_bill - paid_prev
 
-        # Only record revenue for the amount they actully owe
-        revenue_record = min(tendered_amount, balance) if tendered_amount > 0 else 0
+            # Only record revenue for the amount they actually owe
+            revenue_record = min(tendered_amount, balance) if tendered_amount > 0 else 0
 
-        remark = "Checkout Settlement"
-        if data.get('penalty', 0) > 0:
-            remark += f" (Inc. {data['penalty_desc']})"
+            remark = "Checkout Settlement"
+            if data.get('penalty', 0) > 0:
+                remark += f" (Inc. {data['penalty_desc']})"
 
-        # 1. Add Payment to DB
-        pay_id = None
-        if revenue_record > 0:
-            pay_id = self.model.add_payment(bid, data['name'], data['room_cost'], data['svc_cost'],
-                                            data['final_total'], method, revenue_record,
-                                            self.current_staff, remark, None)
+            # 1. Add Payment to DB
+            pay_id = None
+            if revenue_record > 0:
+                # 🔴 FIX: Use 'guest_name' variable instead of data['name']
+                pay_id = self.model.add_payment(bid, guest_name, data['room_cost'], data['svc_cost'],
+                                                data['final_total'], method, revenue_record,
+                                                self.current_staff, remark, None)
 
-        # 2. Update Statuses
-        self.model.update_booking_status(bid, 'Checked Out')
-        self.model.update_room_status(data['room'], 'Dirty')
-        self.model.add_booking_log(bid, data['name'], 'Checked Out', self.current_staff)
+            # 2. Update Statuses
+            self.model.update_booking_status(bid, 'Checked Out')
+            self.model.update_room_status(data['room'], 'Dirty')
+            # 🔴 FIX: Use 'guest_name' here too
+            self.model.add_booking_log(bid, guest_name, 'Checked Out', self.current_staff)
 
-        # 3. Generate Receipt (Safe Call)
-        receipt_data = data.copy()
-        receipt_data['guest'] = data['name']
-        receipt_data['staff'] = self.current_staff
-        receipt_data['paid_prev'] = paid_prev
-        receipt_data['remark'] = remark
+            # 3. Generate Receipt (Safe Call)
+            receipt_data = data.copy()
+            receipt_data['guest'] = guest_name
+            receipt_data['staff'] = self.current_staff
+            receipt_data['paid_prev'] = paid_prev
+            receipt_data['remark'] = remark
 
-        self.generate_receipt(receipt_data, tendered_amount, method, pay_id)
+            # Try to generate receipt, but don't fail checkout if it errors
+            try:
+                self.generate_receipt(receipt_data, tendered_amount, method, pay_id)
+            except Exception as receipt_err:
+                print(f"Receipt generation failed (non-critical): {receipt_err}")
 
-        return True, "Checkout Complete"
+            return True, "Checkout Complete"
 
-    # 🔴 UPDATED: Crash-Proof Receipt Generator
+        except Exception as e:
+            print(f"CRITICAL ERROR in process_checkout: {e}")
+            import traceback
+            traceback.print_exc()
+            return False, f"Checkout failed: {str(e)}"
+
+    # 🔴 FIX: CRASH FIX - Removed setPageMargins call
     def generate_receipt(self, data, paid_now, method, payment_id):
         if not payment_id: return
 
@@ -123,7 +124,6 @@ class StaffController:
             now = datetime.now()
             serial_number = f"OR-{now.strftime('%Y%m')}-{payment_id:06d}"
 
-            # Paths
             folder_date = now.strftime("%Y-%m-%d")
             save_dir = os.path.join("receipts", folder_date)
             if not os.path.exists(save_dir): os.makedirs(save_dir)
@@ -132,17 +132,16 @@ class StaffController:
             filename = f"{serial_number}_{now.strftime('%Y%m%d')}_{timestamp}.pdf"
             full_path = os.path.abspath(os.path.join(save_dir, filename))
 
-            # Calculation for Receipt Display
             total = data.get('final_total', 0)
             prev = data.get('paid_prev', 0)
             change = max(0, (prev + paid_now) - total)
 
-            # HTML
+            # Added explicit margin to CSS body since we removed the printer margin call
             html = f"""
             <html>
             <head>
                 <style>
-                    body {{ font-family: sans-serif; font-size: 12px; }}
+                    body {{ font-family: Helvetica, sans-serif; font-size: 12px; margin: 30px; }}
                     .header {{ text-align: center; border-bottom: 2px dashed black; padding-bottom: 10px; }}
                     .meta {{ font-size: 11px; margin-top: 10px; }}
                     table {{ width: 100%; margin-top: 15px; border-collapse: collapse; }}
@@ -157,16 +156,14 @@ class StaffController:
                     <h2>HOTELLA OFFICIAL RECEIPT</h2>
                     <p>Hotella Resort & Hotel<br>Davao City, Philippines</p>
                 </div>
-
                 <div class="meta">
                     <b>SERIAL NO: {serial_number}</b><br>
                     Date: {now.strftime('%Y-%m-%d %H:%M:%S')}<br>
-                    Booking Ref: {data.get('bid')}<br>
-                    Guest: {data.get('guest')}<br>
-                    Room: {data.get('room')}<br>
-                    Cashier: {data.get('staff')}
+                    Booking Ref: {data.get('bid', 'N/A')}<br>
+                    Guest: {data.get('guest', 'Guest')}<br>
+                    Room: {data.get('room', 'N/A')}<br>
+                    Cashier: {data.get('staff', 'Staff')}
                 </div>
-
                 <table>
                     <tr><td>Description</td> <td class="right">Amount</td></tr>
                     <tr><td colspan="2" class="line"></td></tr>
@@ -175,14 +172,13 @@ class StaffController:
 
             if data.get('svc_cost', 0) > 0:
                 html += f"<tr><td>Services</td> <td class='right'>Php {data['svc_cost']:,}</td></tr>"
-
             if data.get('penalty', 0) > 0:
                 html += f"<tr><td>{data.get('penalty_desc', 'Penalty')}</td> <td class='right'>Php {data['penalty']:,}</td></tr>"
 
             html += f"""
                     <tr><td colspan="2" class="line"></td></tr>
                     <tr><td><b>GRAND TOTAL</b></td> <td class="right"><b>Php {total:,}</b></td></tr>
-                    <tr><td>Prev. Payments</td> <td class="right">Php {prev:,}</td></tr>
+                    <tr><td>Amount Paid (Prev)</td> <td class="right">Php {prev:,}</td></tr>
                     <tr><td><b>Amount Tendered</b></td> <td class="right"><b>Php {paid_now:,}</b></td></tr>
                     <tr><td><b>Change</b></td> <td class="right"><b>Php {change:,}</b></td></tr>
                 </table>
@@ -191,12 +187,12 @@ class StaffController:
             </html>
             """
 
-            # Print
             printer = QPrinter(QPrinter.PrinterMode.HighResolution)
             printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
             printer.setOutputFileName(full_path)
             printer.setPageSize(QPageSize(QPageSize.PageSizeId.A6))
-            printer.setPageMargins(QMarginsF(10, 10, 10, 10))
+
+            # ⛔ CRITICAL FIX: DO NOT ADD SETPAGEMARGINS HERE. IT WILL CRASH.
 
             doc = QTextDocument()
             doc.setHtml(html)
@@ -205,119 +201,19 @@ class StaffController:
 
         except Exception as e:
             print(f"PDF GENERATION FAILED (Non-Critical): {e}")
-    def generate_receipt(self, data, paid_now, method, payment_id):
-        if not payment_id: return
-
-        now = datetime.now()
-        serial_number = f"OR-{now.strftime('%Y%m')}-{payment_id:06d}"
-
-        # Save Path
-        folder_date = now.strftime("%Y-%m-%d")
-        save_dir = os.path.join("receipts", folder_date)
-        if not os.path.exists(save_dir): os.makedirs(save_dir)
-
-        timestamp = now.strftime("%H%M%S")
-        filename = f"{serial_number}_{now.strftime('%Y%m%d')}_{timestamp}.pdf"
-        full_path = os.path.join(save_dir, filename)
-
-        # HTML Construction
-        html = f"""
-        <html>
-        <head>
-            <style>
-                body {{ font-family: 'Courier New', monospace; font-size: 12px; }}
-                .header {{ text-align: center; border-bottom: 2px dashed black; padding-bottom: 10px; }}
-                .meta {{ font-size: 11px; margin-top: 10px; }}
-                table {{ width: 100%; margin-top: 15px; }}
-                .right {{ text-align: right; }}
-                .line {{ border-bottom: 1px solid #000; }}
-                .footer {{ text-align: center; font-size: 10px; margin-top: 20px; }}
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <h2>HOTELLA OFFICIAL RECEIPT</h2>
-                <p>Hotella Resort & Hotel<br>Davao City, Philippines</p>
-            </div>
-
-            <div class="meta">
-                <b>SERIAL NO: {serial_number}</b><br>
-                Date: {now.strftime('%Y-%m-%d %H:%M:%S')}<br>
-                Booking Ref: {data['bid']}<br>
-                Guest: {data['guest']}<br>
-                Room: {data['room']}<br>
-                Cashier: {data['staff']}
-            </div>
-
-            <table>
-                <tr><td>Description</td> <td class="right">Amount</td></tr>
-                <tr><td colspan="2" class="line"></td></tr>
-
-                <tr><td>Room Charge</td> <td class="right">Php {data['room_cost']:,}</td></tr>
-        """
-
-        if data.get('svc_cost', 0) > 0:
-            html += f"<tr><td>Services / Charges</td> <td class='right'>Php {data['svc_cost']:,}</td></tr>"
-
-        if data.get('penalty', 0) > 0:
-            html += f"<tr><td>{data.get('penalty_desc', 'Penalty')}</td> <td class='right'>Php {data['penalty']:,}</td></tr>"
-
-        # 🟢 YOUR REQUESTED CALCULATION LOGIC
-        html += f"""
-                <tr><td colspan="2" class="line"></td></tr>
-                <tr><td><b>GRAND TOTAL</b></td> <td class="right"><b>Php {data['final_total']:,}</b></td></tr>
-                <tr><td>Amount Paid (Prev)</td> <td class="right">Php {data['paid_prev']:,}</td></tr>
-                <tr><td><b>Amount Tendered</b></td> <td class="right"><b>Php {paid_now:,}</b></td></tr>
-                <tr><td><b>Change</b></td> <td class="right"><b>Php {max(0, (data['paid_prev'] + paid_now) - data['final_total']):,}</b></td></tr>
-            </table>
-
-            <div class="footer">
-                <p>Transaction: {data.get('remark', 'Payment')}</p>
-                <p>Thank you for staying with us!</p>
-                <p>System Generated: {filename}</p>
-            </div>
-        </body>
-        </html>
-        """
-
-        # Save PDF
-        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
-        printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
-        printer.setOutputFileName(full_path)
-        printer.setPageSize(QPageSize(QPageSize.PageSizeId.A6))
-        printer.setPageMargins(QMarginsF(10, 10, 10, 10))
-
-        doc = QTextDocument()
-        doc.setHtml(html)
-        doc.print(printer)
-        print(f"Receipt Generated: {full_path}")
 
     def add_service_charge(self, bid, room_number, service_name, price, quantity, employee_name):
-        # 1. Get Employee Data
         emp_data = self.model.get_employee_metadata(employee_name)
-        if not emp_data:
-            return False, "Invalid Staff Member"
-
+        if not emp_data: return False, "Invalid Staff Member"
         emp_id, role = emp_data
-
-        #  2. CONSTRAINT: Blacklist specific roles
-        # These roles are strictly forbidden from performing room service
         forbidden_roles = ["Manager", "Receptionist", "Cleaner"]
-
-        if role in forbidden_roles:
-            return False, f"Permission Denied: {role}s cannot perform Room Service."
-
-        # 3. Calculate Total
+        if role in forbidden_roles: return False, f"Permission Denied: {role}s cannot perform Room Service."
         total = price * quantity
         date = datetime.now().strftime("%Y-%m-%d")
-
-        # 4. Proceed if allowed
         if self.model.add_service(bid, room_number, service_name, total, date, emp_id, quantity):
             return True, "Service Added Successfully"
-
         return False, "Database Error"
 
-    # --- EXISTING ---
     def get_active_room_details(self, room_number):
         return self.model.get_active_guest(room_number)
 
@@ -338,19 +234,19 @@ class StaffController:
 
     def cancel_booking_today(self, bid, name):
         if self.model.update_booking_status(bid, 'Cancelled'):
-            self.model.add_booking_log(bid, name, "Cancelled", self.current_staff)
+            self.model.add_booking_log(bid, name, "Cancelled", self.current_staff);
             return True, "Booking Cancelled"
         return False, "Error"
 
     def create_booking_final(self, data, room_id, payment_data):
         selected_date = datetime.strptime(data['date'], "%Y-%m-%d").date()
         if selected_date < datetime.now().date(): return False, "You cannot book for a past date."
-        total = data['total_price']
-        paid = payment_data['amount']
-        method = payment_data['method']
+        total = data['total_price'];
+        paid = payment_data['amount'];
+        method = payment_data['method'];
         card_num = payment_data.get('card_number', None)
-        guests = data.get('guests', 1)
-        room_type = data.get('room_type')
+        guests = data.get('guests', 1);
+        room_type = data.get('room_type');
         limit = self.MAX_OCCUPANCY.get(room_type, 2)
         if guests > limit: return False, f"Maximum occupancy for {room_type} is {limit} guest(s)."
         if "Credit Card" not in method:
@@ -358,24 +254,16 @@ class StaffController:
             if paid < min_req: return False, f"Minimum 20% downpayment (₱{min_req:,}) is required."
         bid = self.model.create_booking_final(data, room_id, self.current_staff)
         if bid:
-            guest_name = data.get('name') or data.get('Name', 'Guest')
+            guest_name = data.get('name') or data.get('Name', 'Guest');
             remark_text = "Downpayment"
-
-            # 1. Add Payment & Get ID
             pay_id = self.model.add_payment(bid, guest_name, total, 0, total, method, paid, self.current_staff,
                                             remark_text, card_num)
-
-            # 2. Auto-Generate Receipt if payment made
             if pay_id and paid > 0:
-                receipt_data = {
-                    'bid': bid, 'guest': guest_name, 'room': room_id,
-                    'type': data.get('room_type'), 'staff': self.current_staff,
-                    'room_cost': total, 'svc_cost': 0, 'final_total': total,
-                    'paid_prev': 0, 'remark': remark_text
-                }
+                receipt_data = {'bid': bid, 'guest': guest_name, 'room': room_id, 'type': data.get('room_type'),
+                                'staff': self.current_staff, 'room_cost': total, 'svc_cost': 0, 'final_total': total,
+                                'paid_prev': 0, 'remark': remark_text}
                 self.generate_receipt(receipt_data, paid, method, pay_id)
-
-            self.model.add_booking_log(bid, guest_name, "Booking Created", self.current_staff)
+            self.model.add_booking_log(bid, guest_name, "Booking Created", self.current_staff);
             return True, bid
         return False, "Database Error"
 
@@ -383,10 +271,9 @@ class StaffController:
         return self.model.get_available_cleaners()
 
     def assign_cleaner(self, room_num, emp_name):
-        cleaners = self.model.get_available_cleaners()
+        cleaners = self.model.get_available_cleaners();
         emp_id = next((c[0] for c in cleaners if c[1] == emp_name), None)
-        if emp_id:
-            if self.model.assign_cleaner_to_room(room_num, emp_id): return True, "Cleaner assigned!"
+        if emp_id and self.model.assign_cleaner_to_room(room_num, emp_id): return True, "Cleaner assigned!"
         return False, "Failed"
 
     def finish_cleaning(self, room_num):
@@ -404,138 +291,22 @@ class StaffController:
     def get_all_bookings(self):
         return self.model.get_all_bookings()
 
-        # In c_staff.py
-
     def get_overdue_guests(self):
-            active_bookings = self.model.get_all_bookings()
-            overdue_list = []
-            today = datetime.now().date()
-
-            for b in active_bookings:
-                if b.get('status') == 'Checked In':
-                    try:
-                        # 🔴 FIX: Ensure we have valid data before calculating
-                        date_str = str(b.get('date', ''))
-                        days = b.get('days')
-
-                        if not date_str or days is None:
-                            continue  # Skip invalid records
-
-                        # Parse start date
-                        start_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-
-                        # Calculate when they SHOULD have left
-                        expected_checkout = start_date + timedelta(days=int(days))
-
-                        # If today is AFTER their checkout date
-                        if today > expected_checkout:
-                            days_over = (today - expected_checkout).days
-                            b['overdue_by'] = days_over
-                            overdue_list.append(b)
-                    except Exception as e:
-                        print(f"Skipping corrupt booking check: {e}")
-                        continue
-
-            return overdue_list
-
-    def generate_receipt(self, data, paid_now, method, payment_id):
-        if not payment_id: return
-
-        try:
-            # 1. Setup Paths and Serial
-            now = datetime.now()
-            serial_number = f"OR-{now.strftime('%Y%m')}-{payment_id:06d}"
-
-            folder_date = now.strftime("%Y-%m-%d")
-            save_dir = os.path.join("receipts", folder_date)
-            if not os.path.exists(save_dir): os.makedirs(save_dir)
-
-            timestamp = now.strftime("%H%M%S")
-            filename = f"{serial_number}_{now.strftime('%Y%m%d')}_{timestamp}.pdf"
-            full_path = os.path.join(save_dir, filename)
-
-            # 2. Get Absolute Path (Fixes some PDF saving permissions issues)
-            abs_path = os.path.abspath(full_path)
-
-            # 3. HTML Content
-            html = f"""
-            <html>
-            <head>
-                <style>
-                    body {{ font-family: Helvetica, sans-serif; font-size: 12px; }}
-                    .header {{ text-align: center; border-bottom: 2px dashed black; padding-bottom: 10px; }}
-                    .meta {{ font-size: 11px; margin-top: 10px; }}
-                    table {{ width: 100%; margin-top: 15px; border-collapse: collapse; }}
-                    td {{ padding: 4px; }}
-                    .right {{ text-align: right; }}
-                    .line {{ border-bottom: 1px solid #000; }}
-                    .footer {{ text-align: center; font-size: 10px; margin-top: 20px; color: #555; }}
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <h2>HOTELLA OFFICIAL RECEIPT</h2>
-                    <p>Hotella Resort & Hotel<br>Davao City, Philippines</p>
-                </div>
-
-                <div class="meta">
-                    <b>SERIAL NO: {serial_number}</b><br>
-                    Date: {now.strftime('%Y-%m-%d %H:%M:%S')}<br>
-                    Booking Ref: {data.get('bid', 'N/A')}<br>
-                    Guest: {data.get('guest', 'Guest')}<br>
-                    Room: {data.get('room', 'N/A')}<br>
-                    Cashier: {data.get('staff', 'Staff')}
-                </div>
-
-                <table>
-                    <tr><td>Description</td> <td class="right">Amount</td></tr>
-                    <tr><td colspan="2" class="line"></td></tr>
-
-                    <tr><td>Room Charge</td> <td class="right">Php {data.get('room_cost', 0):,}</td></tr>
-            """
-
-            if data.get('svc_cost', 0) > 0:
-                html += f"<tr><td>Services / Charges</td> <td class='right'>Php {data['svc_cost']:,}</td></tr>"
-
-            if data.get('penalty', 0) > 0:
-                html += f"<tr><td>{data.get('penalty_desc', 'Penalty')}</td> <td class='right'>Php {data['penalty']:,}</td></tr>"
-
-            # Calculate Change safely
-            total = data.get('final_total', 0)
-            prev = data.get('paid_prev', 0)
-            change = max(0, (prev + paid_now) - total)
-
-            html += f"""
-                    <tr><td colspan="2" class="line"></td></tr>
-                    <tr><td><b>GRAND TOTAL</b></td> <td class="right"><b>Php {total:,}</b></td></tr>
-                    <tr><td>Amount Paid (Prev)</td> <td class="right">Php {prev:,}</td></tr>
-                    <tr><td><b>Amount Tendered</b></td> <td class="right"><b>Php {paid_now:,}</b></td></tr>
-                    <tr><td><b>Change</b></td> <td class="right"><b>Php {change:,}</b></td></tr>
-                </table>
-
-                <div class="footer">
-                    <p>Transaction: {data.get('remark', 'Payment')}</p>
-                    <p>Thank you for staying with us!</p>
-                    <p>File: {filename}</p>
-                </div>
-            </body>
-            </html>
-            """
-
-            # 4. Save PDF Safe Block
-            printer = QPrinter(QPrinter.PrinterMode.HighResolution)
-            printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
-            printer.setOutputFileName(abs_path)
-            printer.setPageSize(QPageSize(QPageSize.PageSizeId.A6))
-            printer.setPageMargins(QMarginsF(10, 10, 10, 10))
-
-            doc = QTextDocument()
-            doc.setHtml(html)
-            doc.print(printer)
-            print(f"Receipt Generated Successfully: {abs_path}")
-
-        except Exception as e:
-            # 🔴 THIS PREVENTS THE CRASH
-            print(f"CRITICAL ERROR GENERATING PDF: {e}")
-            import traceback
-            traceback.print_exc()
+        active_bookings = self.model.get_all_bookings();
+        overdue_list = [];
+        today = datetime.now().date()
+        for b in active_bookings:
+            if b.get('status') == 'Checked In':
+                try:
+                    date_str = str(b.get('date', ''));
+                    days = b.get('days')
+                    if not date_str or days is None: continue
+                    start_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                    expected_checkout = start_date + timedelta(days=int(days))
+                    if today > expected_checkout:
+                        days_over = (today - expected_checkout).days;
+                        b['overdue_by'] = days_over;
+                        overdue_list.append(b)
+                except:
+                    continue
+        return overdue_list

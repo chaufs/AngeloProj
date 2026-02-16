@@ -49,7 +49,7 @@ class StaffModel:
         finally:
             c.close()
 
-    # --- EXISTING METHODS ---
+    # --- HOUSEKEEPING LOGIC (FIXED LOGGING) ---
     def get_available_cleaners(self):
         c = self.db.get_cursor()
         try:
@@ -61,31 +61,57 @@ class StaffModel:
     def assign_cleaner_to_room(self, room_num, emp_id):
         c = self.db.get_cursor()
         try:
+            # 1. Update Room Status
             c.execute("UPDATE rooms SET status='Cleaning', assigned_employee_id=%s WHERE room_number=%s",
                       (emp_id, room_num))
+
+            # 2. Update Employee Status
             c.execute("UPDATE employees SET status='Busy' WHERE id=%s", (emp_id,))
-            self.db.conn.commit();
+
+            # 3. 🟢 FIX: Insert Log into Database
+            now = datetime.now().strftime("%Y-%m-%d %H:%M")
+            c.execute("INSERT INTO housekeeping_logs (room_number, action, date_time) VALUES (%s, %s, %s)",
+                      (room_num, "Cleaning Started", now))
+
+            self.db.conn.commit()
             return True
-        except:
-            self.db.conn.rollback(); return False
+        except Exception as e:
+            print(f"Error assigning cleaner: {e}")
+            self.db.conn.rollback()
+            return False
         finally:
             c.close()
 
     def finish_cleaning_room(self, room_num):
         c = self.db.get_cursor()
         try:
+            # 1. Get the cleaner ID to free them up
             c.execute("SELECT assigned_employee_id FROM rooms WHERE room_number=%s", (room_num,))
             emp_id = c.fetchone()
             emp_id = emp_id[0] if emp_id else None
+
+            # 2. Update Room Status to Vacant
             c.execute("UPDATE rooms SET status='Vacant', assigned_employee_id=NULL WHERE room_number=%s", (room_num,))
-            if emp_id: c.execute("UPDATE employees SET status='Active' WHERE id=%s", (emp_id,))
-            self.db.conn.commit();
+
+            # 3. Set Cleaner back to Active
+            if emp_id:
+                c.execute("UPDATE employees SET status='Active' WHERE id=%s", (emp_id,))
+
+            # 4. 🟢 FIX: Insert Log into Database
+            now = datetime.now().strftime("%Y-%m-%d %H:%M")
+            c.execute("INSERT INTO housekeeping_logs (room_number, action, date_time) VALUES (%s, %s, %s)",
+                      (room_num, "Cleaning Finished", now))
+
+            self.db.conn.commit()
             return True
-        except:
-            self.db.conn.rollback(); return False
+        except Exception as e:
+            print(f"Error finishing cleaning: {e}")
+            self.db.conn.rollback()
+            return False
         finally:
             c.close()
 
+    # --- REST OF METHODS (UNCHANGED) ---
     def get_room_status_by_booking(self, bid):
         c = self.db.get_cursor();
         c.execute(
@@ -110,8 +136,14 @@ class StaffModel:
     def get_checkout_candidates(self):
         c = self.db.get_cursor()
         try:
-            sql = """SELECT t.room_number, t.booking_id, b.price, b.name FROM transactions t JOIN bookings b ON t.booking_id = CONCAT('B', LPAD(b.id, 5, '0')) JOIN rooms r ON t.room_number = r.room_number WHERE r.status='Occupied' AND b.status IN ('Confirmed', 'Arrived', 'Checked In')"""
-            c.execute(sql);
+            # We now select ANY active booking (Checked In), even if room status says "Vacant" by mistake.
+            sql = """
+                SELECT t.room_number, t.booking_id, b.price, b.name 
+                FROM transactions t 
+                JOIN bookings b ON t.booking_id = CONCAT('B', LPAD(b.id, 5, '0')) 
+                WHERE b.status = 'Checked In'
+            """
+            c.execute(sql)
             return c.fetchall()
         except:
             return []
@@ -130,8 +162,10 @@ class StaffModel:
             c.close()
 
     def get_all_rooms_data(self):
-        c = self.db.get_cursor(); c.execute(
-            "SELECT room_number, status, description, assigned_employee_id FROM rooms"); return c.fetchall()
+        c = self.db.get_cursor();
+        c.execute(
+            "SELECT room_number, status, description, assigned_employee_id FROM rooms");
+        return c.fetchall()
 
     def create_booking_final(self, d, room_id, staff_name):
         c = self.db.get_cursor()
@@ -149,28 +183,29 @@ class StaffModel:
             self.db.conn.commit();
             return bid
         except:
-            self.db.conn.rollback(); return False
+            self.db.conn.rollback();
+            return False
         finally:
             c.close()
 
     def add_payment(self, bid, name, r, s, g, m, a, staff_name, remarks, card_num=None):
         c = self.db.get_cursor()
+        if not c: return None
         try:
             date = datetime.now().strftime("%Y-%m-%d %H:%M")
             sql = "INSERT INTO payments (booking_id, customer_name, room_total, service_total, grand_total, method, date_paid, amount_paid, card_number, processed_by, remarks) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
-            c.execute(sql, (bid, name, r, s, g, m, date, a, card_num, staff_name, remarks))
-
-            # 🔴 NEW: Get the ID of the payment we just inserted
+            values = (str(bid), str(name), int(r), int(s), int(g), str(m), date, int(a),
+                      str(card_num) if card_num else None, str(staff_name), str(remarks))
+            c.execute(sql, values)
             c.execute("SELECT LAST_INSERT_ID()")
             payment_id = c.fetchone()[0]
-
             self.db.conn.commit()
-            return payment_id  # Return ID instead of True
-        except:
+            return payment_id
+        except Exception as e:
             self.db.conn.rollback()
             return None
         finally:
-            c.close()
+            if c: c.close()
 
     def get_active_guest(self, room_num):
         c = self.db.get_cursor()
@@ -191,7 +226,8 @@ class StaffModel:
             self.db.conn.commit();
             return True
         except:
-            self.db.conn.rollback(); return False
+            self.db.conn.rollback();
+            return False
         finally:
             c.close()
 
@@ -222,7 +258,8 @@ class StaffModel:
             self.db.conn.commit();
             return True
         except:
-            self.db.conn.rollback(); return False
+            self.db.conn.rollback();
+            return False
         finally:
             c.close()
 
@@ -236,29 +273,36 @@ class StaffModel:
             self.db.conn.commit();
             return True
         except:
-            self.db.conn.rollback(); return False
+            self.db.conn.rollback();
+            return False
         finally:
             c.close()
 
     def get_all_bookings(self):
-        c = self.db.get_cursor(); c.execute(
-            "SELECT b.id, b.name, b.room_type, t.room_number, b.price, b.status, b.date, b.days FROM bookings b LEFT JOIN transactions t ON t.booking_id = CONCAT('B', LPAD(b.id, 5, '0')) ORDER BY b.date DESC"); rows = c.fetchall(); return [
+        c = self.db.get_cursor();
+        c.execute(
+            "SELECT b.id, b.name, b.room_type, t.room_number, b.price, b.status, b.date, b.days FROM bookings b LEFT JOIN transactions t ON t.booking_id = CONCAT('B', LPAD(b.id, 5, '0')) ORDER BY b.date DESC");
+        rows = c.fetchall();
+        return [
             {'bid': f"B{r[0]:05d}", 'name': r[1], 'room_type': r[2], 'room': r[3] or 'N/A', 'price': r[4],
              'status': r[5], 'date': r[6], 'days': r[7]} for r in rows]
 
     def get_dirty_rooms(self):
-        c = self.db.get_cursor(); c.execute(
-            "SELECT room_number, description, status FROM rooms WHERE status IN ('Dirty','Housekeeping')"); return c.fetchall()
+        c = self.db.get_cursor();
+        c.execute(
+            "SELECT room_number, description, status FROM rooms WHERE status IN ('Dirty','Housekeeping')");
+        return c.fetchall()
 
     def update_room_status(self, r, s):
-        c = self.db.get_cursor(); c.execute("UPDATE rooms SET status=%s WHERE room_number=%s",
-                                            (s, r)); self.db.conn.commit()
+        c = self.db.get_cursor();
+        c.execute("UPDATE rooms SET status=%s WHERE room_number=%s",
+                  (s, r));
+        self.db.conn.commit()
 
-        # 🔴 UPDATED: Fetch ID AND Role for validation
     def get_employee_metadata(self, name):
-            c = self.db.get_cursor()
-            try:
-                c.execute("SELECT id, role FROM employees WHERE name=%s", (name,))
-                return c.fetchone()  # Returns (id, role) or None
-            finally:
-                c.close()
+        c = self.db.get_cursor()
+        try:
+            c.execute("SELECT id, role FROM employees WHERE name=%s", (name,))
+            return c.fetchone()
+        finally:
+            c.close()

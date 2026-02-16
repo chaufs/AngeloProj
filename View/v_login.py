@@ -44,11 +44,22 @@ class LoginView(QWidget):
         # --- Logo Logic ---
         logo_lbl = QLabel()
         logo_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        # Placeholder for Logo
-        logo_path = "assets/logo.png"
-        if os.path.exists(logo_path):
-            logo_lbl.setPixmap(QPixmap(logo_path).scaledToWidth(150, Qt.TransformationMode.SmoothTransformation))
-        else:
+
+        # 🟢 FIX: Check for 'Hotella.png' or 'assets/Hotella.png'
+        possible_paths = ["Hotella.png", "assets/Hotella.png", "assets/logo.png"]
+        logo_found = False
+
+        for path in possible_paths:
+            if os.path.exists(path):
+                pixmap = QPixmap(path)
+                if not pixmap.isNull():
+                    # Scale logo to reasonable size
+                    logo_lbl.setPixmap(pixmap.scaled(180, 180, Qt.AspectRatioMode.KeepAspectRatio,
+                                                     Qt.TransformationMode.SmoothTransformation))
+                    logo_found = True
+                    break
+
+        if not logo_found:
             logo_lbl.setText("HOTELLA")
             logo_lbl.setStyleSheet(
                 "font-size: 32px; font-weight: bold; color: #2C3E50; border: none; background: transparent;")
@@ -157,8 +168,6 @@ class LoginView(QWidget):
 
     def update_peek_icon(self):
         is_password = (self.pwd.echoMode() == QLineEdit.EchoMode.Password)
-
-
         self.peek_btn.setText("Show" if is_password else "Hide")
 
     def do_login(self):

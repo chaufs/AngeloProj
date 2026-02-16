@@ -2,19 +2,16 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, 
                              QLineEdit, QComboBox, QSpinBox, QCalendarWidget, QTableWidget, QStackedWidget,
                              QTableWidgetItem, QHeaderView, QMessageBox, QAbstractItemView, QDateEdit,
                              QScrollArea, QDialog, QTableView, QStyleFactory, QTabWidget, QCheckBox,
-                             QGraphicsDropShadowEffect)
-from PyQt6.QtCore import Qt, QTimer, QTime, QDate
-from PyQt6.QtGui import QPalette, QColor
+                             QGraphicsDropShadowEffect, QApplication)
+from PyQt6.QtCore import Qt, QTimer, QTime, QDate, pyqtSignal
+from PyQt6.QtGui import QPalette, QColor, QPixmap
 from datetime import datetime
-from PyQt6.QtCore import pyqtSignal
+import os
 
 # --- STYLES ---
-ARROW_UP_URL = "url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAMCAYAAABWdVznAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAHRJREFUeNpi/P//PwM5gImBQkC8AcqGg7//54Hy/yPzC4C4A4h9gHgXEAMA4g0wDQz///8H4g8wzQA1jAEEIGx0E4Bq/gDxLhD7A/EvIDsBiH///QPj//8/A+O///+B+B+Q/Q9I/wXi/0D8H4g/A/EDIAMAgowhMg2Rz2kAAAAASUVORK5CYII=)"
-ARROW_DOWN_URL = "url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAMCAYAAABWdVznAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAHZJREFUeNpi/P//PwM5gImBQkC8Acr///8/A+O///+B+D+Q/Q9I/wXi/0D8H4g/A/EDID4AxL///wPj//8/A+O///+B+B+Q/Q9I/wXi/0D8H4g/A/EDID4AxA1ANjIAGQMEIGx0EwBq/gDxLhD7A/EvIDsBiAEAIMMIb8x15dIAAAAASUVORK5CYII=)"
-LIGHT_BG = "background-color: white; color: #2C3E50;"
-SIDEBAR_BG = "background-color: #1A1A1D; color: white;"
 INPUT_STYLE = "padding: 10px; border: 1px solid #BDC3C7; border-radius: 5px; font-size: 14px; background: white; color: black;"
 BTN_STYLE = "QPushButton { background-color: #2C3E50; color: white; font-weight: bold; border-radius: 5px; padding: 12px; } QPushButton:hover { background-color: #34495E; }"
+SIDEBAR_BG = "background-color: #1A1A1D; color: white;"
 CARD_STYLE = """
     QFrame { 
         background-color: white; 
@@ -26,94 +23,15 @@ CARD_STYLE = """
     }
 """
 CALENDAR_STYLE = """
-    QCalendarWidget QWidget { 
-        alternate-background-color: #F7F9F9; 
-        background-color: white;
-    }
-    QCalendarWidget QWidget#qt_calendar_navigationbar { 
-        background-color: #2C3E50; 
-        border: none;
-        border-top-left-radius: 5px;
-        border-top-right-radius: 5px;
-    }
-    QCalendarWidget QSpinBox {
-        background-color: transparent;
-        color: white;
-        font-weight: bold;
-        selection-background-color: #3498DB;
-    }
-    QCalendarWidget QToolButton {
-        color: white; 
-        font-weight: bold;
-        icon-size: 24px;
-        background-color: transparent;
-        margin: 5px;
-    }
-    QCalendarWidget QToolButton:hover { 
-        background-color: #34495E; 
-        border-radius: 5px;
-    }
-    QCalendarWidget QAbstractItemView {
-        font-size: 14px;
-        color: #333;
-        alternate-background-color: #F7F9F9;
-        selection-background-color: #3498DB; 
-        selection-color: white;
-        outline: none;
-    }
-    QCalendarWidget QAbstractItemView::item:selected {
-        background-color: #2C3E50;
-        color: white;
-        border-radius: 3px;
-    }
-    QCalendarWidget QAbstractItemView:disabled { 
-        color: #BDC3C7; 
-    }
+    QCalendarWidget QWidget { alternate-background-color: #F7F9F9; background-color: white; }
+    QCalendarWidget QWidget#qt_calendar_navigationbar { background-color: #2C3E50; border: none; }
+    QCalendarWidget QSpinBox { background-color: transparent; color: white; font-weight: bold; }
+    QCalendarWidget QToolButton { color: white; font-weight: bold; icon-size: 24px; background-color: transparent; }
+    QCalendarWidget QAbstractItemView { font-size: 14px; selection-background-color: #3498DB; selection-color: white; }
 """
 SPINBOX_STYLE = """
-    QSpinBox {
-        padding: 5px 10px; 
-        padding-right: 30px; 
-        border: 2px solid #BDC3C7; 
-        border-radius: 5px; 
-        font-size: 14px; 
-        background: white;
-        color: #2C3E50;
-        font-weight: bold;
-    }
-    QSpinBox:focus { 
-        border: 2px solid #3498DB; 
-    }
-    QSpinBox::up-button, QSpinBox::down-button {
-        subcontrol-origin: border;
-        width: 30px; 
-        background: #ECF0F1;
-        border-left: 1px solid #BDC3C7;
-    }
-    QSpinBox::up-button {
-        subcontrol-position: top right;
-        border-top-right-radius: 5px;
-        border-bottom: 1px solid #BDC3C7;
-    }
-    QSpinBox::down-button {
-        subcontrol-position: bottom right;
-        border-bottom-right-radius: 5px;
-    }
-    QSpinBox::up-button:hover, QSpinBox::down-button:hover {
-        background: #BDC3C7;
-    }
-    QSpinBox::up-arrow {
-        image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAADxJREFUeNpi/P//PwMxgImBQgDyg/j/4fL/IfL/oXwQGx0zE6YIphCuCKYQWRFMIawimEJsChBgAL0MDieF23O7AAAAAElFTkSuQmCC');
-        width: 10px;
-        height: 10px;
-        border: none;
-    }
-    QSpinBox::down-arrow {
-        image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAD1JREFUeNpi/P//PwMxgImBQsD4kS9A9j8oD6YAmwJ0K0wRTAFYI0wRTIW4LGJ0I7oiiFE4XYiuCKYAmwIEGAB6CA5x6Fwa0AAAAABJRU5ErkJggg==');
-        width: 10px;
-        height: 10px;
-        border: none;
-    }
+    QSpinBox { padding: 5px 10px; border: 2px solid #BDC3C7; border-radius: 5px; font-size: 14px; background: white; color: #2C3E50; font-weight: bold; }
+    QSpinBox:focus { border: 2px solid #3498DB; }
 """
 
 
@@ -121,7 +39,6 @@ class StaffWindow(QWidget):
     def __init__(self, ctrl):
         super().__init__()
         self.ctrl = ctrl
-        # ... (Your existing layout setup code) ...
 
         self.setStyleSheet("""
             QWidget { background-color: white; color: #2C3E50; font-family: 'Segoe UI', sans-serif; }
@@ -142,7 +59,7 @@ class StaffWindow(QWidget):
         sb_layout.setContentsMargins(0, 0, 0, 0)
         sb_layout.setSpacing(0)
 
-        # ... (Logo setup code) ...
+        # Logo Area
         logo_box = QFrame()
         logo_box.setFixedHeight(80)
         logo_box.setStyleSheet("background-color: #B71C1C;")
@@ -159,8 +76,6 @@ class StaffWindow(QWidget):
 
         # Initialize Dashboard
         self.dashboard_page = DashboardPage(ctrl)
-
-        # 🟢 CONNECT THE DASHBOARD SIGNAL HERE
         self.dashboard_page.navigate_signal.connect(self.nav)
 
         # Page List
@@ -215,6 +130,7 @@ class StaffWindow(QWidget):
         if hasattr(current_widget, 'refresh'):
             current_widget.refresh()
 
+
 class ClickableCard(QFrame):
     clicked = pyqtSignal()
 
@@ -247,7 +163,8 @@ class ClickableCard(QFrame):
         self.clicked.emit()
         super().mousePressEvent(event)
 
-# --- EXISTING PAGES ---
+
+# --- PAGE 0: DASHBOARD (UPDATED LAYOUT) ---
 class DashboardPage(QWidget):
     # Signal to tell the main window to change tabs
     navigate_signal = pyqtSignal(int)
@@ -256,13 +173,38 @@ class DashboardPage(QWidget):
         super().__init__()
         self.ctrl = ctrl
         l = QVBoxLayout(self)
-        l.setContentsMargins(40, 40, 40, 40)
-        l.setSpacing(25)
+        l.setContentsMargins(30, 30, 30, 30)  # Adjusted margins to match Admin
+        l.setSpacing(20)
 
-        self.lbl_time = QLabel()
-        self.lbl_time.setStyleSheet("font-size: 16px; color: #7F8C8D;")
-        l.addWidget(QLabel("Overview", styleSheet="font-size: 28px; font-weight: 800; color: #2C3E50;"))
-        l.addWidget(self.lbl_time)
+        # 🟢 NEW: Stylish Header (Matches Admin Layout)
+        header_frame = QFrame()
+        header_frame.setFixedHeight(100)
+        # Red Gradient to match Staff Theme (Dark Red to Red Orange)
+        header_frame.setStyleSheet(
+            "background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #C0392B, stop:1 #E74C3C); border-radius: 15px;")
+
+        h_layout = QHBoxLayout(header_frame)
+        h_layout.setContentsMargins(25, 0, 25, 0)
+
+        lbl_title = QLabel("Staff Dashboard")
+        lbl_title.setStyleSheet("font-size: 28px; font-weight: 800; color: white; background: transparent;")
+        h_layout.addWidget(lbl_title)
+
+        h_layout.addStretch()
+
+        # Time and Date Labels
+        self.time_lbl = QLabel()
+        self.time_lbl.setStyleSheet("font-size: 24px; color: white; background: transparent; font-weight: bold;")
+        self.date_lbl = QLabel()
+        self.date_lbl.setStyleSheet("font-size: 14px; color: white; background: transparent;")
+
+        right_vbox = QVBoxLayout()
+        right_vbox.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        right_vbox.addWidget(self.time_lbl)
+        right_vbox.addWidget(self.date_lbl)
+
+        h_layout.addLayout(right_vbox)
+        l.addWidget(header_frame)
 
         self.grid = QGridLayout()
         self.grid.setSpacing(20)
@@ -275,35 +217,68 @@ class DashboardPage(QWidget):
         self.upd()
 
     def upd(self):
-        self.lbl_time.setText(datetime.now().strftime('%A, %B %d, %Y | %I:%M:%S %p'))
+        # Update clock with 12-hour format
+        self.time_lbl.setText(datetime.now().strftime('%I:%M:%S %p'))
+        self.date_lbl.setText(datetime.now().strftime('%A, %B %d, %Y'))
 
-    # In v_staff_ui.py -> DashboardPage class
+    def refresh(self):
+        # 1. Clear existing items safely
+        if self.grid is not None:
+            while self.grid.count():
+                item = self.grid.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
 
-        # In PaymentPage class
+        # 2. Get Stats safely
+        try:
+            total, vac, occ, dirt = self.ctrl.get_stats()
+            # Check for Overstayers
+            if hasattr(self.ctrl, 'get_overdue_guests'):
+                overstayers = self.ctrl.get_overdue_guests()
+            else:
+                overstayers = []
+        except Exception as e:
+            print(f"Stats Error: {e}")
+            total, vac, occ, dirt = 0, 0, 0, 0
+            overstayers = []
 
-        def refresh(self):
-            # 🔴 FIX: Check if grid exists and clear safely
-            if self.grid is not None:
-                while self.grid.count():
-                    item = self.grid.takeAt(0)
-                    if item.widget():
-                        item.widget().deleteLater()
+        # 3. Check for Overstayers (Alert Box)
+        row_offset = 0
+        if overstayers:
+            alert_frame = QFrame()
+            alert_frame.setStyleSheet("background-color: #C0392B; border-radius: 10px; color: white;")
+            alert_frame.setFixedHeight(120)
+            al = QVBoxLayout(alert_frame)
 
-            try:
-                data = self.ctrl.get_checkout_cards()
-                if not data:
-                    self.grid.addWidget(
-                        QLabel("No occupied rooms pending checkout.", styleSheet="color: #7f8c8d; font-size: 16px;"), 0,
-                        0)
-                    return
+            header = QLabel(f"⚠️ {len(overstayers)} GUEST(S) OVERSTAYING")
+            header.setStyleSheet("font-weight:bold; font-size:16px; border:none; color:white; background:transparent;")
+            al.addWidget(header)
 
-                r, c = 0, 0
-                for row_data in data:
-                    self.grid.addWidget(self.create_card(row_data), r, c)
-                    c += 1
-                    if c > 3: c = 0; r += 1
-            except Exception as e:
-                print(f"Error loading checkout cards: {e}")
+            txt = "\n".join([f"• Room {g.get('room', '?')} ({g.get('name', 'Guest')})" for g in overstayers])
+            details = QLabel(txt)
+            details.setStyleSheet("border:none; color:white; background:transparent;")
+            al.addWidget(details)
+
+            self.grid.addWidget(alert_frame, 0, 0, 1, 2)
+            row_offset = 1
+
+        # 4. Define Cards
+        # Indices: 1=All Bookings, 2=Book Room, 3=Services, 5=Housekeeping
+        cards_data = [
+            ("TOTAL BOOKINGS", total, "#3498DB", 1),
+            ("VACANT ROOMS", vac, "#27AE60", 2),
+            ("OCCUPIED", occ, "#E74C3C", 3),
+            ("HOUSEKEEPING", dirt, "#F39C12", 5)
+        ]
+
+        for i, (title, val, color, target_idx) in enumerate(cards_data):
+            card = ClickableCard(color, val, title)
+            # Use default argument capture to fix lambda scoping
+            card.clicked.connect(lambda checked=False, idx=target_idx: self.navigate_signal.emit(idx))
+            self.grid.addWidget(card, (i // 2) + row_offset, i % 2)
+
+
+# --- PAGE 1: ALL BOOKINGS ---
 class BookingsManagerPage(QWidget):
     def __init__(self, ctrl):
         super().__init__()
@@ -364,7 +339,8 @@ class TodayBookingsTab(QWidget):
 
         bookings = self.ctrl.get_todays_arrivals()
         if not bookings:
-            self.grid.addWidget(QLabel("No arrivals scheduled for today.", styleSheet="color: #7f8c8d; font-size: 14px;"), 0, 0)
+            self.grid.addWidget(
+                QLabel("No arrivals scheduled for today.", styleSheet="color: #7f8c8d; font-size: 14px;"), 0, 0)
             return
 
         r, c = 0, 0
@@ -383,7 +359,8 @@ class TodayBookingsTab(QWidget):
 
         v.addWidget(QLabel(b['name'], styleSheet="font-weight:bold; font-size:15px; border:none; color:#2C3E50;"))
         v.addWidget(QLabel(f"ID: {b['bid']}", styleSheet="color:#7F8C8D; font-size:12px; border:none;"))
-        v.addWidget(QLabel(f"Room: {b['room']} ({b['type']})", styleSheet="color:#E67E22; font-weight:bold; border:none;"))
+        v.addWidget(
+            QLabel(f"Room: {b['room']} ({b['type']})", styleSheet="color:#E67E22; font-weight:bold; border:none;"))
 
         current_status = str(b.get('status', '')).strip().lower()
 
@@ -480,6 +457,7 @@ class AllBookingsTab(QWidget):
         return card
 
 
+# --- PAGE 2: BOOK A ROOM ---
 class BookingPage(QWidget):
     def __init__(self, ctrl):
         super().__init__()
@@ -496,7 +474,8 @@ class BookingPage(QWidget):
         lp_layout.setContentsMargins(25, 25, 25, 25)
         lp_layout.setSpacing(15)
 
-        lp_layout.addWidget(QLabel("Guest Details", styleSheet="font-size: 20px; font-weight: 800; color: #2C3E50;border:0px;"))
+        lp_layout.addWidget(
+            QLabel("Guest Details", styleSheet="font-size: 20px; font-weight: 800; color: #2C3E50;border:0px;"))
         self.inp = {}
         for f in ["Name", "Email", "Phone", "Address"]:
             lp_layout.addWidget(QLabel(f, styleSheet="font-weight:bold; color:#555;border:0px;"))
@@ -637,6 +616,7 @@ class BookingPage(QWidget):
             else:
                 QMessageBox.critical(self, "Error", msg)
 
+
 class PaymentDialog(QDialog):
     def __init__(self, parent, total):
         super().__init__(parent);
@@ -677,12 +657,22 @@ class PaymentDialog(QDialog):
 
     def chk(self, m):
         if "Credit Card" in m:
-            self.card_inp.show(); self.spin.hide(); self.lbl_amt.hide(); self.spin.setValue(0); self.lbl_note.setText(
+            self.card_inp.show();
+            self.spin.hide();
+            self.lbl_amt.hide();
+            self.spin.setValue(0);
+            self.lbl_note.setText(
                 "Credit Card Guarantee. No immediate charge.")
         else:
-            self.card_inp.hide(); self.spin.show(); self.lbl_amt.show(); min_dp = int(
-                self.total * 0.20); self.spin.setRange(min_dp, self.total); self.spin.setValue(
-                min_dp); self.lbl_note.setText(f"Minimum 20% Downpayment: ₱{min_dp:,}")
+            self.card_inp.hide();
+            self.spin.show();
+            self.lbl_amt.show();
+            min_dp = int(
+                self.total * 0.20);
+            self.spin.setRange(min_dp, self.total);
+            self.spin.setValue(
+                min_dp);
+            self.lbl_note.setText(f"Minimum 20% Downpayment: ₱{min_dp:,}")
 
     def save(self):
         method = self.cb.currentText()
@@ -812,7 +802,8 @@ class ServiceDialog(QDialog):
                 self.ctrl.add_service_charge(self.bid, self.room, svc, price, qty, emp)
                 added.append(f"{svc} (x{qty})")
         if added:
-            QMessageBox.information(self, "Success", f"Added services:\n" + "\n".join(added)); self.accept()
+            QMessageBox.information(self, "Success", f"Added services:\n" + "\n".join(added));
+            self.accept()
         else:
             QMessageBox.warning(self, "Warning", "No services selected.")
 
@@ -833,6 +824,7 @@ class PaymentPage(QWidget):
             "background: #3498DB; color: white; padding: 8px; border-radius: 5px; font-weight: bold;")
         btn_refresh.clicked.connect(self.refresh)
         l.addWidget(btn_refresh)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("border:none; background: transparent;")
@@ -845,69 +837,94 @@ class PaymentPage(QWidget):
         self.refresh()
 
     def refresh(self):
-        while self.grid.count():
-            item = self.grid.takeAt(0)
-            if item.widget(): item.widget().deleteLater()
-        data = self.ctrl.get_checkout_cards()
-        if not data:
-            self.grid.addWidget(
-                QLabel("No occupied rooms pending checkout.", styleSheet="color: #7f8c8d; font-size: 16px;"), 0, 0)
-            return
-        r, c = 0, 0
-        for row_data in data:
-            self.grid.addWidget(self.create_card(row_data), r, c)
-            c += 1
-            if c > 3: c = 0; r += 1
+        # 1. Clear existing items safely
+        if self.grid is not None:
+            while self.grid.count():
+                item = self.grid.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+
+        try:
+            data = self.ctrl.get_checkout_cards()
+            if not data:
+                self.grid.addWidget(
+                    QLabel("No occupied rooms pending checkout.", styleSheet="color: #7f8c8d; font-size: 16px;"), 0, 0)
+                return
+
+            r, c = 0, 0
+            for row_data in data:
+                self.grid.addWidget(self.create_card(row_data), r, c)
+                c += 1
+                if c > 3: c = 0; r += 1
+        except Exception as e:
+            print(f"Error loading checkout cards: {e}")
 
     def create_card(self, data):
-        card = QFrame();
+        # Use ClickableCard class if available, or QFrame with signal
+        # We use a standard QFrame here but handle the click carefully
+        card = ClickableCard("white", 0, "", self)  # Dummy init
         card.setFixedSize(220, 160)
+
+        # Style based on balance
         if data['final_balance'] > 0:
-            status_color = "#E74C3C";
-            status_text = f"Due: ₱{data['final_balance']:,}";
+            status_color = "#E74C3C"
+            status_text = f"Due: ₱{data['final_balance']:,}"
             border_color = "#E74C3C"
         else:
-            status_color = "#27AE60";
-            status_text = "Fully Paid";
+            status_color = "#27AE60"
+            status_text = "Fully Paid"
             border_color = "#27AE60"
+
         card.setStyleSheet(
-            f"QFrame {{ background-color: white; border: 2px solid {border_color}; border-radius: 10px; }} QFrame:hover {{ background-color: #F9F9F9; border: 2px solid #3498DB; }}")
-        layout = QVBoxLayout(card);
+            f"QFrame {{ background-color: white; border: 2px solid {border_color}; border-radius: 10px; }} "
+            f"QFrame:hover {{ background-color: #F9F9F9; border: 2px solid #3498DB; }}"
+        )
+
+        # Rebuild Layout (ClickableCard default layout needs clearing or ignoring)
+        if card.layout():
+            QWidget().setLayout(card.layout())  # Detach old layout
+
+        layout = QVBoxLayout(card)
         layout.setSpacing(5)
         layout.addWidget(QLabel(f"Room {data['room']}",
                                 styleSheet="font-size: 18px; font-weight: 900; color: #2C3E50; border:none;"))
-        lbl_name = QLabel(data['guest'], styleSheet="font-size: 14px; font-weight: bold; color: #555; border:none;");
+        lbl_name = QLabel(data['guest'], styleSheet="font-size: 14px; font-weight: bold; color: #555; border:none;")
         lbl_name.setWordWrap(True)
         layout.addWidget(lbl_name)
         layout.addWidget(QLabel(f"ID: {data['bid']}", styleSheet="color: #999; font-size: 12px; border:none;"))
         layout.addStretch()
         layout.addWidget(
             QLabel(status_text, styleSheet=f"font-size: 16px; font-weight: 800; color: {status_color}; border:none;"))
-        card.setCursor(Qt.CursorShape.PointingHandCursor)
-        card.mousePressEvent = lambda e: self.open_checkout(data)
+
+        # Connect Signal
+        try:
+            card.clicked.disconnect()
+        except:
+            pass
+        card.clicked.connect(lambda: self.open_checkout(data))
+
         return card
 
     def open_checkout(self, data):
         dlg = CheckoutDialog(self, data, self.ctrl)
         if dlg.exec() == 1:
-            # 🔴 FIX: Delay the refresh by 50ms to prevent crashing the app
-            # (Prevents deleting the card while the mouse click is still active)
-            QTimer.singleShot(50, self.refresh)
+            # DELAY REFRESH TO PREVENT CRASH
+            QTimer.singleShot(200, self.refresh)
 
 
 class CheckoutDialog(QDialog):
     def __init__(self, parent, data, ctrl):
         super().__init__(parent)
-        self.setWindowTitle(f"Checkout Room {data['room']}");
-        self.setFixedSize(400, 550)  # Increased height for Change display
-        self.ctrl = ctrl;
+        self.setWindowTitle(f"Checkout Room {data['room']}")
+        self.setFixedSize(400, 550)
+        self.ctrl = ctrl
         self.data = data
 
         # Calculate what is actually owed
         self.balance_due = int(data['final_balance'])
 
-        l = QVBoxLayout(self);
-        l.setSpacing(10);
+        l = QVBoxLayout(self)
+        l.setSpacing(10)
         l.setContentsMargins(30, 30, 30, 30)
 
         # Info Section
@@ -970,25 +987,39 @@ class CheckoutDialog(QDialog):
             self.lbl_change.setStyleSheet("font-size: 18px; font-weight: bold; color: #27AE60; margin-top: 10px;")
 
     def process(self):
-        tendered = self.spin.value() if self.spin else 0
-        method = self.cb_method.currentText() if hasattr(self, 'cb_method') else "None"
+        try:
+            tendered = self.spin.value() if self.spin else 0
+            method = self.cb_method.currentText() if hasattr(self, 'cb_method') else "None"
 
-        # 🔴 CONSTRAINT: Cannot pay less than balance
-        if self.balance_due > 0 and tendered < self.balance_due:
-            QMessageBox.warning(self, "Insufficient Payment",
-                                f"The guest is short by ₱{self.balance_due - tendered:,}.\nPlease collect the full amount.")
-            return
+            if self.balance_due > 0 and tendered < self.balance_due:
+                QMessageBox.warning(self, "Insufficient Payment",
+                                    f"The guest is short by ₱{self.balance_due - tendered:,}.\nPlease collect the full amount.")
+                return
 
-        # Process logic
-        res, msg = self.ctrl.process_checkout(self.data, tendered, method)
+            # Show processing indicator
+            self.setEnabled(False)
+            QApplication.processEvents()  # Update UI
 
-        if res:
-            change = max(0, tendered - self.balance_due)
-            success_msg = f"Checkout Successful!\n\nAmount Tendered: ₱{tendered:,}\nChange Due: ₱{change:,}\n\nReceipt has been saved."
-            QMessageBox.information(self, "Success", success_msg)
-            self.accept()
-        else:
-            QMessageBox.critical(self, "Error", msg)
+            res, msg = self.ctrl.process_checkout(self.data, tendered, method)
+
+            self.setEnabled(True)
+
+            if res:
+                change = max(0, tendered - self.balance_due)
+                success_msg = f"Checkout Successful!\n\nAmount Tendered: ₱{tendered:,}\nChange Due: ₱{change:,}\n\nReceipt has been saved to 'receipts' folder."
+                QMessageBox.information(self, "Success", success_msg)
+                self.accept()
+            else:
+                QMessageBox.critical(self, "Error", f"Checkout failed:\n{msg}")
+
+        except Exception as e:
+            self.setEnabled(True)
+            print(f"CRITICAL ERROR in checkout dialog: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "System Error",
+                                 f"An unexpected error occurred:\n{str(e)}\n\nPlease contact support if this persists.")
+
 
 # ==========================================
 # PAGE 6: HOUSEKEEPING
@@ -1032,24 +1063,24 @@ class HousekeepingPage(QWidget):
     def create_card(self, rm):
         room_num, status, desc = rm[0], rm[1], rm[2]
         if status == 'Dirty':
-            color = "#E67E22";
-            hover = "#D35400";
-            border = "#D35400";
+            color = "#E67E22"
+            hover = "#D35400"
+            border = "#D35400"
             cursor = Qt.CursorShape.PointingHandCursor
         elif status == 'Cleaning':
-            color = "#F1C40F";
-            hover = "#F39C12";
-            border = "#D68910";
+            color = "#F1C40F"
+            hover = "#F39C12"
+            border = "#D68910"
             cursor = Qt.CursorShape.PointingHandCursor
         elif status == 'Occupied':
-            color = "#2ECC71";
-            hover = "#2ECC71";
-            border = "#27AE60";
+            color = "#2ECC71"
+            hover = "#2ECC71"
+            border = "#27AE60"
             cursor = Qt.CursorShape.ForbiddenCursor
         else:  # Vacant
-            color = "#95A5A6";
-            hover = "#95A5A6";
-            border = "#7F8C8D";
+            color = "#95A5A6"
+            hover = "#95A5A6"
+            border = "#7F8C8D"
             cursor = Qt.CursorShape.ForbiddenCursor
         btn = QPushButton(f"{room_num}\n{desc}\n{status}")
         btn.setFixedSize(120, 90)
