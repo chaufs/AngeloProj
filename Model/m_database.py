@@ -44,11 +44,11 @@ class Database:
                 "CREATE TABLE IF NOT EXISTS users (username VARCHAR(50) PRIMARY KEY, password VARCHAR(255), role VARCHAR(20), employee_id INT)",
                 "CREATE TABLE IF NOT EXISTS bookings (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100), email VARCHAR(100), phone VARCHAR(20), address VARCHAR(255), room_type VARCHAR(50), date VARCHAR(20), days INT, price INT, status VARCHAR(50), guests_count INT DEFAULT 1, created_by VARCHAR(100) DEFAULT '---')",
                 "CREATE TABLE IF NOT EXISTS rooms (id INT AUTO_INCREMENT PRIMARY KEY, room_number VARCHAR(10) UNIQUE, description VARCHAR(100), status VARCHAR(20) DEFAULT 'Vacant', assigned_employee_id INT)",
-                "CREATE TABLE IF NOT EXISTS services (id INT AUTO_INCREMENT PRIMARY KEY, booking_id VARCHAR(20), room_number VARCHAR(10), service_name VARCHAR(100), price INT, date VARCHAR(20), employee_id INT, quantity INT DEFAULT 1)",
-                "CREATE TABLE IF NOT EXISTS transactions (id INT AUTO_INCREMENT PRIMARY KEY, booking_id VARCHAR(20), room_number VARCHAR(10), date_confirmed VARCHAR(20))",
-                "CREATE TABLE IF NOT EXISTS payments (id INT AUTO_INCREMENT PRIMARY KEY, booking_id VARCHAR(20), customer_name VARCHAR(100), room_total INT, service_total INT, grand_total INT, method VARCHAR(50), date_paid VARCHAR(20), amount_paid INT DEFAULT 0, card_number VARCHAR(50), processed_by VARCHAR(100) DEFAULT '---', remarks VARCHAR(50) DEFAULT 'Payment')",
+                "CREATE TABLE IF NOT EXISTS services (id INT AUTO_INCREMENT PRIMARY KEY, booking_id INT, room_number VARCHAR(10), service_name VARCHAR(100), price INT, date VARCHAR(20), employee_id INT, quantity INT DEFAULT 1)",
+                "CREATE TABLE IF NOT EXISTS transactions (id INT AUTO_INCREMENT PRIMARY KEY, booking_id INT, room_number VARCHAR(10), date_confirmed VARCHAR(20))",
+                "CREATE TABLE IF NOT EXISTS payments (id INT AUTO_INCREMENT PRIMARY KEY, booking_id INT, customer_name VARCHAR(100), room_total INT, service_total INT, grand_total INT, method VARCHAR(50), date_paid VARCHAR(20), amount_paid INT DEFAULT 0, card_number VARCHAR(50), processed_by VARCHAR(100) DEFAULT '---', remarks VARCHAR(50) DEFAULT 'Payment')",
                 "CREATE TABLE IF NOT EXISTS housekeeping_logs (id INT AUTO_INCREMENT PRIMARY KEY, room_number VARCHAR(10), action VARCHAR(100), date_time VARCHAR(20))",
-                "CREATE TABLE IF NOT EXISTS booking_logs (id INT AUTO_INCREMENT PRIMARY KEY, booking_id VARCHAR(20), guest_name VARCHAR(100), action_type VARCHAR(50), timestamp VARCHAR(30), performed_by VARCHAR(100) DEFAULT '---')",
+                "CREATE TABLE IF NOT EXISTS booking_logs (id INT AUTO_INCREMENT PRIMARY KEY, booking_id INT, guest_name VARCHAR(100), action_type VARCHAR(50), timestamp VARCHAR(30), performed_by VARCHAR(100) DEFAULT '---')",
                 "CREATE TABLE IF NOT EXISTS employees (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100), role VARCHAR(50), contact VARCHAR(50), status VARCHAR(20) DEFAULT 'Available')"
             ]
             for t in tables: c.execute(t)
@@ -57,8 +57,29 @@ class Database:
             # NOTE: For production, ensure an employee exists for the admin.
             c.execute("INSERT IGNORE INTO users (username, password, role) VALUES ('admin','admin123','admin')")
             self.conn.commit()
+            # ✅ FIX: Migrate booking_id columns from VARCHAR to INT if needed
+            self._migrate_booking_id_columns(c)
         finally:
             c.close()
+
+    def _migrate_booking_id_columns(self, c):
+        """Migrate booking_id columns from VARCHAR(20) to INT on existing databases."""
+        tables = ['transactions', 'services', 'payments', 'booking_logs']
+        for table in tables:
+            try:
+                c.execute(f"SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA='hotella' AND TABLE_NAME='{table}' AND COLUMN_NAME='booking_id'")
+                row = c.fetchone()
+                if row and row[0].lower() in ('varchar', 'char', 'text'):
+                    print(f"[Migration] Converting {table}.booking_id VARCHAR -> INT...")
+                    # Convert stored 'B00001' strings to integers first, then alter column
+                    c.execute(f"UPDATE {table} SET booking_id = CAST(REPLACE(booking_id, 'B', '') AS UNSIGNED) WHERE booking_id REGEXP '^B[0-9]+$'")
+                    c.execute(f"ALTER TABLE {table} MODIFY COLUMN booking_id INT")
+                    self.conn.commit()
+                    print(f"[Migration] {table}.booking_id migrated successfully.")
+            except Exception as e:
+                print(f"[Migration] Warning for {table}: {e}")
+                try: self.conn.rollback()
+                except: pass
 
     # --- AUTH (UPDATED) ---
     def auth(self, u, p):
@@ -148,7 +169,8 @@ class Database:
         c = self.get_cursor()
         try:
             c.execute("SELECT booking_id FROM transactions WHERE room_number=%s ORDER BY id DESC LIMIT 1", (room_num,))
-            res = c.fetchone(); return res[0] if res else "-"
+            res = c.fetchone()
+            return f"B{res[0]:05d}" if res and res[0] else "-"
         finally: c.close()
 
     def get_services_by_booking_id(self, bid):
@@ -164,16 +186,28 @@ class Database:
     def get_housekeeping_logs(self):
         c = self.get_cursor(); c.execute("SELECT * FROM housekeeping_logs ORDER BY id DESC"); return c.fetchall()
     def get_unassigned_bookings(self):
-        c = self.get_cursor(); c.execute("SELECT booking_id FROM transactions"); assigned = {row[0] for row in c.fetchall()}; c.execute("SELECT id, room_type FROM bookings"); all_b = c.fetchall(); return [(f"B{b[0]:05d}", b[1]) for b in all_b if f"B{b[0]:05d}" not in assigned]
+        c = self.get_cursor()
+        c.execute("SELECT booking_id FROM transactions")
+        # ✅ FIX: booking_id is INT now
+        assigned = {row[0] for row in c.fetchall()}
+        c.execute("SELECT id, room_type FROM bookings")
+        all_b = c.fetchall()
+        return [(f"B{b[0]:05d}", b[1]) for b in all_b if b[0] not in assigned]
     def assign_room(self, bid, room):
-        c = self.get_cursor(); c.execute("UPDATE rooms SET status='Occupied' WHERE room_number=%s", (room,)); date = datetime.now().strftime("%Y-%m-%d %H:%M"); c.execute("INSERT INTO transactions (booking_id, room_number, date_confirmed) VALUES (%s,%s,%s)", (bid, room, date)); self.conn.commit(); c.close()
+        c = self.get_cursor()
+        # ✅ FIX: Store booking_id as integer
+        bid_int = int(str(bid).replace("B", ""))
+        c.execute("UPDATE rooms SET status='Occupied' WHERE room_number=%s", (room,))
+        date = datetime.now().strftime("%Y-%m-%d %H:%M")
+        c.execute("INSERT INTO transactions (booking_id, room_number, date_confirmed) VALUES (%s,%s,%s)", (bid_int, room, date))
+        self.conn.commit(); c.close()
     def get_room_booking_history(self, room):
         c = self.get_cursor(); history = []
         try:
             c.execute("SELECT booking_id FROM transactions WHERE room_number=%s", (room,))
+            # ✅ FIX: booking_id is INT - no need to strip 'B'
             bids = [row[0] for row in c.fetchall()]
-            for bid_str in bids:
-                bid_int = int(bid_str.replace("B", ""))
+            for bid_int in bids:
                 c.execute("SELECT * FROM bookings WHERE id=%s", (bid_int,))
                 res = c.fetchone()
                 if res: history.append(res)

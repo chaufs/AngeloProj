@@ -66,43 +66,34 @@ class StaffController:
     def process_checkout(self, data, tendered_amount, method):
         try:
             bid = data['bid']
-            # 🟢 Get guest name safely (handles both 'guest' and 'name' keys)
             guest_name = data.get('guest', data.get('name', 'Guest'))
 
-            # Calculate totals
             total_bill = data['final_total']
             paid_prev = data['paid']
             balance = total_bill - paid_prev
 
-            # Only record revenue for the amount they actually owe
             revenue_record = min(tendered_amount, balance) if tendered_amount > 0 else 0
 
             remark = "Checkout Settlement"
             if data.get('penalty', 0) > 0:
                 remark += f" (Inc. {data['penalty_desc']})"
 
-            # 1. Add Payment to DB
             pay_id = None
             if revenue_record > 0:
-                # 🔴 FIX: Use 'guest_name' variable instead of data['name']
                 pay_id = self.model.add_payment(bid, guest_name, data['room_cost'], data['svc_cost'],
                                                 data['final_total'], method, revenue_record,
                                                 self.current_staff, remark, None)
 
-            # 2. Update Statuses
             self.model.update_booking_status(bid, 'Checked Out')
             self.model.update_room_status(data['room'], 'Dirty')
-            # 🔴 FIX: Use 'guest_name' here too
             self.model.add_booking_log(bid, guest_name, 'Checked Out', self.current_staff)
 
-            # 3. Generate Receipt (Safe Call)
             receipt_data = data.copy()
             receipt_data['guest'] = guest_name
             receipt_data['staff'] = self.current_staff
             receipt_data['paid_prev'] = paid_prev
             receipt_data['remark'] = remark
 
-            # Try to generate receipt, but don't fail checkout if it errors
             try:
                 self.generate_receipt(receipt_data, tendered_amount, method, pay_id)
             except Exception as receipt_err:
@@ -116,7 +107,6 @@ class StaffController:
             traceback.print_exc()
             return False, f"Checkout failed: {str(e)}"
 
-    # 🔴 FIX: CRASH FIX - Removed setPageMargins call
     def generate_receipt(self, data, paid_now, method, payment_id):
         if not payment_id: return
 
@@ -126,171 +116,171 @@ class StaffController:
 
             folder_date = now.strftime("%Y-%m-%d")
             save_dir = os.path.join("receipts", folder_date)
-            if not os.path.exists(save_dir): os.makedirs(save_dir)
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
 
             timestamp = now.strftime("%H%M%S")
             filename = f"{serial_number}_{now.strftime('%Y%m%d')}_{timestamp}.pdf"
             full_path = os.path.abspath(os.path.join(save_dir, filename))
 
-            total = data.get('final_total', 0)
-            prev = data.get('paid_prev', 0)
-            change = max(0, (prev + paid_now) - total)
+            total   = data.get('final_total', 0)
+            prev    = data.get('paid_prev', 0)
+            change  = max(0, (prev + paid_now) - total)
 
-            # Improved receipt with better readability
             html = f"""
-            <html>
-            <head>
-                <style>
-                    body {{ 
-                        font-family: 'Arial', 'Helvetica', sans-serif; 
-                        font-size: 14px; 
-                        margin: 40px; 
-                        line-height: 1.6;
-                    }}
-                    .header {{ 
-                        text-align: center; 
-                        border-bottom: 3px double black; 
-                        padding-bottom: 15px; 
-                        margin-bottom: 20px;
-                    }}
-                    .header h1 {{
-                        font-size: 24px;
-                        font-weight: bold;
-                        margin: 5px 0;
-                        letter-spacing: 1px;
-                    }}
-                    .header p {{
-                        font-size: 13px;
-                        margin: 3px 0;
-                        color: #333;
-                    }}
-                    .meta {{ 
-                        font-size: 13px; 
-                        margin: 20px 0;
-                        line-height: 1.8;
-                    }}
-                    .meta b {{
-                        font-size: 14px;
-                    }}
-                    table {{ 
-                        width: 100%; 
-                        margin-top: 25px; 
-                        border-collapse: collapse; 
-                        font-size: 14px;
-                    }}
-                    td {{ 
-                        padding: 10px 8px;
-                        border-bottom: 1px solid #ddd;
-                    }}
-                    .desc-col {{ 
-                        width: 65%; 
-                        font-weight: 500;
-                    }}
-                    .amount-col {{ 
-                        width: 35%; 
-                        text-align: right; 
-                        font-weight: 500;
-                    }}
-                    .right {{ text-align: right; }}
-                    .line {{ 
-                        border-bottom: 2px solid #333; 
-                    }}
-                    .total-row {{
-                        font-size: 16px;
-                        font-weight: bold;
-                        background-color: #f5f5f5;
-                    }}
-                    .footer {{ 
-                        text-align: center; 
-                        font-size: 12px; 
-                        margin-top: 30px; 
-                        padding-top: 20px;
-                        border-top: 2px dashed #999;
-                        color: #666;
-                    }}
-                </style>
-            </head>
-            <body>
-                <div class="header">
-                    <h1>HOTELLA</h1>
-                    <h2 style="margin: 5px 0; font-size: 18px; font-weight: 600;">OFFICIAL RECEIPT</h2>
-                    <p>Hotella Resort & Hotel</p>
-                    <p>Davao City, Philippines</p>
-                </div>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11pt;
+      color: #1a1a1a;
+      line-height: 1.35;
+      padding: 18px 32px;
+  }}
+  .header {{
+      text-align: center;
+      border-bottom: 3px double #222;
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+  }}
+  .hotel-name {{
+      font-size: 24pt;
+      font-weight: 900;
+      letter-spacing: 4px;
+      color: #B71C1C;
+      margin-bottom: 1px;
+  }}
+  .receipt-title {{
+      font-size: 11pt;
+      font-weight: bold;
+      letter-spacing: 3px;
+      color: #333;
+      margin-bottom: 2px;
+  }}
+  .hotel-address {{ font-size: 9pt; color: #666; }}
+  .meta-table {{
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+      font-size: 10pt;
+  }}
+  .meta-table td {{ padding: 2px 6px; border-bottom: 1px solid #eee; vertical-align: top; }}
+  .meta-table .lbl {{ font-weight: bold; color: #444; width: 36%; white-space: nowrap; }}
+  .meta-table .val {{ color: #111; }}
+  .items-table {{ width: 100%; border-collapse: collapse; font-size: 11pt; }}
+  .items-table thead tr {{ background-color: #2C3E50; color: white; }}
+  .items-table thead th {{ padding: 6px 10px; font-size: 10pt; font-weight: bold; text-align: left; }}
+  .items-table thead th:last-child {{ text-align: right; }}
+  .items-table tbody td {{ padding: 6px 10px; border-bottom: 1px solid #ddd; }}
+  .items-table tbody td:last-child {{ text-align: right; font-weight: bold; }}
+  .items-table .divider td {{ border-bottom: 2px solid #333; padding: 1px 0; }}
+  .row-grand td {{
+      font-size: 13pt; font-weight: 900; background-color: #EEEEEE;
+      padding: 7px 10px; border-bottom: 2px solid #333;
+  }}
+  .row-sub td {{ font-size: 10pt; color: #444; padding: 4px 10px; padding-left: 20px; }}
+  .row-tendered td {{
+      font-size: 11pt; font-weight: bold; background-color: #FAFAFA;
+      padding: 5px 10px; padding-left: 20px; border-bottom: 1px solid #ddd;
+  }}
+  .row-change td {{
+      font-size: 12pt; font-weight: 900; color: #1B5E20;
+      background-color: #E8F5E9; padding: 5px 10px; padding-left: 20px;
+  }}
+  .footer {{
+      text-align: center; border-top: 3px double #222;
+      margin-top: 14px; padding-top: 8px;
+  }}
+  .remark    {{ font-size: 9pt;  color: #555; margin-bottom: 4px; }}
+  .thankyou  {{ font-size: 12pt; font-weight: bold; color: #B71C1C; margin-bottom: 3px; }}
+  .generated {{ font-size: 8pt;  color: #aaa; }}
+</style>
+</head>
+<body>
 
-                <div class="meta">
-                    <b>SERIAL NO:</b> {serial_number}<br>
-                    <b>Date:</b> {now.strftime('%Y-%m-%d %H:%M:%S')}<br>
-                    <b>Booking Ref:</b> {data.get('bid', 'N/A')}<br>
-                    <b>Guest Name:</b> {data.get('guest', 'Guest')}<br>
-                    <b>Room Number:</b> {data.get('room', 'N/A')}<br>
-                    <b>Processed By:</b> {data.get('staff', 'Staff')}
-                </div>
+<div class="header">
+  <div class="hotel-name">HOTELLA</div>
+  <div class="receipt-title">OFFICIAL RECEIPT</div>
+  <div class="hotel-address">Hotella Resort &amp; Hotel &nbsp;|&nbsp; Davao City, Philippines</div>
+</div>
 
-                <table>
-                    <tr style="border-bottom: 2px solid #333;">
-                        <td class="desc-col" style="font-weight: bold; font-size: 15px;">Description</td>
-                        <td class="amount-col" style="font-weight: bold; font-size: 15px;">Amount</td>
-                    </tr>
-                    <tr>
-                        <td class="desc-col">Room Charge</td>
-                        <td class="amount-col">₱ {data.get('room_cost', 0):,}</td>
-                    </tr>
-            """
+<table class="meta-table">
+  <tr><td class="lbl">Serial No:</td>      <td class="val">{serial_number}</td></tr>
+  <tr><td class="lbl">Date:</td>           <td class="val">{now.strftime('%B %d, %Y   %I:%M %p')}</td></tr>
+  <tr><td class="lbl">Booking Ref:</td>    <td class="val">{data.get('bid', 'N/A')}</td></tr>
+  <tr><td class="lbl">Guest Name:</td>     <td class="val">{data.get('guest', 'N/A')}</td></tr>
+  <tr><td class="lbl">Room Number:</td>    <td class="val">{data.get('room', 'N/A')}</td></tr>
+  <tr><td class="lbl">Payment Method:</td> <td class="val">{method}</td></tr>
+  <tr><td class="lbl">Processed By:</td>   <td class="val">{data.get('staff', self.current_staff)}</td></tr>
+</table>
 
+<table class="items-table">
+  <thead>
+    <tr><th>Description</th><th>Amount</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Room Charge</td>
+      <td>&#8369; {data.get('room_cost', 0):,}</td>
+    </tr>
+"""
             if data.get('svc_cost', 0) > 0:
                 html += f"""
-                    <tr>
-                        <td class="desc-col">Services</td>
-                        <td class="amount-col">₱ {data['svc_cost']:,}</td>
-                    </tr>
-                """
-
+    <tr>
+      <td>Services</td>
+      <td>&#8369; {data['svc_cost']:,}</td>
+    </tr>
+"""
             if data.get('penalty', 0) > 0:
                 html += f"""
-                    <tr>
-                        <td class="desc-col">{data.get('penalty_desc', 'Penalty')}</td>
-                        <td class="amount-col">₱ {data['penalty']:,}</td>
-                    </tr>
-                """
-
+    <tr>
+      <td>{data.get('penalty_desc', 'Penalty')}</td>
+      <td>&#8369; {data['penalty']:,}</td>
+    </tr>
+"""
             html += f"""
-                    <tr class="line">
-                        <td colspan="2"></td>
-                    </tr>
-                    <tr class="total-row">
-                        <td class="desc-col">GRAND TOTAL</td>
-                        <td class="amount-col">₱ {total:,}</td>
-                    </tr>
-                    <tr>
-                        <td class="desc-col" style="padding-left: 20px;">Previously Paid</td>
-                        <td class="amount-col">₱ {prev:,}</td>
-                    </tr>
-                    <tr style="background-color: #f9f9f9;">
-                        <td class="desc-col" style="padding-left: 20px;"><b>Amount Tendered</b></td>
-                        <td class="amount-col"><b>₱ {paid_now:,}</b></td>
-                    </tr>
-                    <tr style="background-color: #e8f5e9;">
-                        <td class="desc-col" style="padding-left: 20px;"><b>CHANGE</b></td>
-                        <td class="amount-col"><b>₱ {change:,}</b></td>
-                    </tr>
-                </table>
+    <tr class="divider"><td colspan="2"></td></tr>
 
-                <div class="footer">
-                    <p style="margin: 5px 0; font-size: 13px;"><b>{data.get('remark', 'Payment')}</b></p>
-                    <p style="margin: 15px 0 5px 0; font-size: 14px; font-weight: 600;">Thank you for staying with us!</p>
-                    <p style="margin: 5px 0;">This is a computer-generated receipt.</p>
-                </div>
-            </body>
-            </html>
-            """
+    <!-- GRAND TOTAL -->
+    <tr class="row-grand">
+      <td>GRAND TOTAL</td>
+      <td>&#8369; {total:,}</td>
+    </tr>
+    <tr class="row-sub">
+      <td>Previously Paid</td>
+      <td>&#8369; {prev:,}</td>
+    </tr>
+    <tr class="row-tendered">
+      <td>Amount Tendered</td>
+      <td>&#8369; {paid_now:,}</td>
+    </tr>
+    <tr class="row-change">
+      <td>CHANGE</td>
+      <td>&#8369; {change:,}</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- FOOTER -->
+<div class="footer">
+  <p class="remark">{data.get('remark', 'Payment')}</p>
+  <p class="thankyou">Thank you for staying with us!</p>
+  <p class="generated">This is a computer-generated receipt.</p>
+</div>
+
+</body>
+</html>
+"""
 
             printer = QPrinter(QPrinter.PrinterMode.HighResolution)
             printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
             printer.setOutputFileName(full_path)
-            printer.setPageSize(QPageSize(QPageSize.PageSizeId.A5))  # 🟢 CHANGED: A6 → A5 for larger receipt
-
-            # ⛔ CRITICAL FIX: DO NOT ADD SETPAGEMARGINS HERE. IT WILL CRASH.
+            # ✅ A4 gives enough space for large, readable fonts
+            printer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
 
             doc = QTextDocument()
             doc.setHtml(html)
@@ -332,36 +322,42 @@ class StaffController:
 
     def cancel_booking_today(self, bid, name):
         if self.model.update_booking_status(bid, 'Cancelled'):
-            self.model.add_booking_log(bid, name, "Cancelled", self.current_staff);
+            self.model.add_booking_log(bid, name, "Cancelled", self.current_staff)
             return True, "Booking Cancelled"
         return False, "Error"
 
     def create_booking_final(self, data, room_id, payment_data):
         selected_date = datetime.strptime(data['date'], "%Y-%m-%d").date()
-        if selected_date < datetime.now().date(): return False, "You cannot book for a past date."
-        total = data['total_price'];
-        paid = payment_data['amount'];
-        method = payment_data['method'];
+        if selected_date < datetime.now().date():
+            return False, "You cannot book for a past date."
+        total    = data['total_price']
+        paid     = payment_data['amount']
+        method   = payment_data['method']
         card_num = payment_data.get('card_number', None)
-        guests = data.get('guests', 1);
-        room_type = data.get('room_type');
+        guests   = data.get('guests', 1)
+        room_type = data.get('room_type')
         limit = self.MAX_OCCUPANCY.get(room_type, 2)
-        if guests > limit: return False, f"Maximum occupancy for {room_type} is {limit} guest(s)."
+        if guests > limit:
+            return False, f"Maximum occupancy for {room_type} is {limit} guest(s)."
         if "Credit Card" not in method:
             min_req = int(total * 0.20)
-            if paid < min_req: return False, f"Minimum 20% downpayment (₱{min_req:,}) is required."
+            if paid < min_req:
+                return False, f"Minimum 20% downpayment (₱{min_req:,}) is required."
         bid = self.model.create_booking_final(data, room_id, self.current_staff)
         if bid:
-            guest_name = data.get('name') or data.get('Name', 'Guest');
+            guest_name  = data.get('name') or data.get('Name', 'Guest')
             remark_text = "Downpayment"
-            pay_id = self.model.add_payment(bid, guest_name, total, 0, total, method, paid, self.current_staff,
-                                            remark_text, card_num)
+            pay_id = self.model.add_payment(bid, guest_name, total, 0, total, method, paid,
+                                            self.current_staff, remark_text, card_num)
             if pay_id and paid > 0:
-                receipt_data = {'bid': bid, 'guest': guest_name, 'room': room_id, 'type': data.get('room_type'),
-                                'staff': self.current_staff, 'room_cost': total, 'svc_cost': 0, 'final_total': total,
-                                'paid_prev': 0, 'remark': remark_text}
+                receipt_data = {
+                    'bid': bid, 'guest': guest_name, 'room': room_id,
+                    'type': data.get('room_type'), 'staff': self.current_staff,
+                    'room_cost': total, 'svc_cost': 0, 'final_total': total,
+                    'paid_prev': 0, 'remark': remark_text, 'penalty': 0, 'penalty_desc': ''
+                }
                 self.generate_receipt(receipt_data, paid, method, pay_id)
-            self.model.add_booking_log(bid, guest_name, "Booking Created", self.current_staff);
+            self.model.add_booking_log(bid, guest_name, "Booking Created", self.current_staff)
             return True, bid
         return False, "Database Error"
 
@@ -369,9 +365,10 @@ class StaffController:
         return self.model.get_available_cleaners()
 
     def assign_cleaner(self, room_num, emp_name):
-        cleaners = self.model.get_available_cleaners();
+        cleaners = self.model.get_available_cleaners()
         emp_id = next((c[0] for c in cleaners if c[1] == emp_name), None)
-        if emp_id and self.model.assign_cleaner_to_room(room_num, emp_id): return True, "Cleaner assigned!"
+        if emp_id and self.model.assign_cleaner_to_room(room_num, emp_id):
+            return True, "Cleaner assigned!"
         return False, "Failed"
 
     def finish_cleaning(self, room_num):
@@ -379,10 +376,12 @@ class StaffController:
 
     def mark_arrived(self, bid, name):
         room_data = self.model.get_room_status_by_booking(bid)
-        if room_data and room_data[0] in ['Dirty', 'Cleaning']: return False, f"Room {room_data[1]} is {room_data[0]}."
+        if room_data and room_data[0] in ['Dirty', 'Cleaning']:
+            return False, f"Room {room_data[1]} is {room_data[0]}."
         if self.model.update_booking_status(bid, "Checked In"):
             self.model.add_booking_log(bid, name, "Checked In", self.current_staff)
-            if room_data: self.model.update_room_status(room_data[1], 'Occupied')
+            if room_data:
+                self.model.update_room_status(room_data[1], 'Occupied')
             return True, "Guest Checked In"
         return False, "Error"
 
@@ -390,20 +389,20 @@ class StaffController:
         return self.model.get_all_bookings()
 
     def get_overdue_guests(self):
-        active_bookings = self.model.get_all_bookings();
-        overdue_list = [];
+        active_bookings = self.model.get_all_bookings()
+        overdue_list = []
         today = datetime.now().date()
         for b in active_bookings:
             if b.get('status') == 'Checked In':
                 try:
-                    date_str = str(b.get('date', ''));
+                    date_str = str(b.get('date', ''))
                     days = b.get('days')
                     if not date_str or days is None: continue
                     start_date = datetime.strptime(date_str, "%Y-%m-%d").date()
                     expected_checkout = start_date + timedelta(days=int(days))
                     if today > expected_checkout:
-                        days_over = (today - expected_checkout).days;
-                        b['overdue_by'] = days_over;
+                        days_over = (today - expected_checkout).days
+                        b['overdue_by'] = days_over
                         overdue_list.append(b)
                 except:
                     continue

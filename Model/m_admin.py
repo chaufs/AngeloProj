@@ -8,8 +8,8 @@ class AdminModel:
     def get_total_revenue_year(self, year):
         c = self.db.get_cursor()
         try:
-            # Sums up grand_total for the current year (date_paid format: 'YYYY-MM-DD HH:MM')
-            c.execute("SELECT SUM(grand_total) FROM payments WHERE date_paid LIKE %s", (f"{year}%",))
+            # ✅ FIX: Sum amount_paid (actual cash collected), not grand_total (duplicated per booking)
+            c.execute("SELECT SUM(amount_paid) FROM payments WHERE date_paid LIKE %s", (f"{year}%",))
             res = c.fetchone()[0]
             return res if res else 0
         finally:
@@ -60,8 +60,8 @@ class AdminModel:
                     p.date_paid,
                     p.booking_id
                 FROM payments p
-                LEFT JOIN transactions t ON p.booking_id = t.booking_id
-                LEFT JOIN bookings b ON p.booking_id = CONCAT('B', LPAD(b.id, 5, '0'))
+                LEFT JOIN bookings b ON p.booking_id = b.id
+                LEFT JOIN transactions t ON t.booking_id = b.id
                 ORDER BY p.date_paid DESC
             """
             c.execute(sql)
@@ -80,7 +80,7 @@ class AdminModel:
             c.execute("SELECT id, name, room_type, date, days, price, status FROM bookings ORDER BY date DESC")
             data['bookings'] = c.fetchall()
 
-            sql_svc = "SELECT s.service_name, s.price, s.date, s.quantity, s.room_number, b.name FROM services s LEFT JOIN bookings b ON s.booking_id = CONCAT('B', LPAD(b.id, 5, '0')) ORDER BY s.date DESC"
+            sql_svc = "SELECT s.service_name, s.price, s.date, s.quantity, s.room_number, b.name FROM services s LEFT JOIN bookings b ON s.booking_id = b.id ORDER BY s.date DESC"
             c.execute(sql_svc)
             data['services'] = c.fetchall()
 
@@ -137,9 +137,9 @@ class AdminModel:
         except: self.db.conn.rollback(); return False
         finally: c.close()
 
-    def get_room_history_data(self, r): c = self.db.get_cursor(); c.execute("SELECT b.id, b.name, b.date, b.days, b.status, b.created_by FROM transactions t JOIN bookings b ON t.booking_id = CONCAT('B', LPAD(b.id, 5, '0')) WHERE t.room_number = %s ORDER BY b.date DESC", (r,)); return c.fetchall()
+    def get_room_history_data(self, r): c = self.db.get_cursor(); c.execute("SELECT b.id, b.name, b.date, b.days, b.status, b.created_by FROM transactions t JOIN bookings b ON t.booking_id = b.id WHERE t.room_number = %s ORDER BY b.date DESC", (r,)); return c.fetchall()
     def get_all_activity_logs(self): c = self.db.get_cursor(); c.execute("SELECT * FROM booking_logs ORDER BY timestamp DESC LIMIT 200"); return c.fetchall()
-    def check_active_bookings(self, r): c = self.db.get_cursor(); c.execute("SELECT COUNT(*) FROM transactions t JOIN bookings b ON t.booking_id = CONCAT('B', LPAD(b.id, 5, '0')) WHERE t.room_number = %s AND b.status IN ('Confirmed', 'Arrived', 'Checked In')", (r,)); return c.fetchone()[0] > 0
+    def check_active_bookings(self, r): c = self.db.get_cursor(); c.execute("SELECT COUNT(*) FROM transactions t JOIN bookings b ON t.booking_id = b.id WHERE t.room_number = %s AND b.status IN ('Confirmed', 'Arrived', 'Checked In')", (r,)); return c.fetchone()[0] > 0
     def update_room_status(self, r, s): c = self.db.get_cursor(); c.execute("UPDATE rooms SET status=%s WHERE room_number=%s", (s, r)); self.db.conn.commit(); return True
     def update_room_type(self, r, t): c = self.db.get_cursor(); c.execute("UPDATE rooms SET description=%s WHERE room_number=%s", (t, r)); self.db.conn.commit(); return True
     def get_all_bookings(self): c = self.db.get_cursor(); c.execute("SELECT id, name, email, phone, address, room_type, date, days, price FROM bookings ORDER BY id DESC"); return c.fetchall()

@@ -1240,9 +1240,9 @@ class HousekeepingPage(QWidget):
         btn.setStyleSheet(
             f"QPushButton {{ background-color: {color}; color: white; border-radius: 8px; font-weight: bold; border: 2px solid {border}; }} QPushButton:hover {{ background-color: {hover}; }}")
         if status == 'Dirty':
-            btn.clicked.connect(lambda: self.open_assign_dialog(room_num))
+            btn.clicked.connect(lambda checked, rn=room_num: self.open_assign_dialog(rn))
         elif status == 'Cleaning':
-            btn.clicked.connect(lambda: self.finish_cleaning(room_num))
+            btn.clicked.connect(lambda checked, rn=room_num: self.finish_cleaning(rn))
         else:
             btn.setDisabled(True)
             btn.setStyleSheet(btn.styleSheet() + "QPushButton { opacity: 0.8; }")
